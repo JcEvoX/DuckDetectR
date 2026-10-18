@@ -38,7 +38,7 @@ The app combines a Jetpack Compose interface, feature-oriented Gradle modules, a
 
 # Quick start
 
-1. **Download** the APK from the [Nightly release](https://github.com/eltavine/Duck-Detector-Refactoring/releases/tag/nightly). Nightly builds are published from `main` and are also posted to the [Telegram channel](https://t.me/duck_detector); there is no stable release yet.
+1. **Download** the APK from the [Nightly release](https://github.com/eltavine/Duck-Detector-Refactoring/releases/tag/nightly). Each Nightly from `main` has its own `nightly-yyyy-MM-dd-gitshortHash` archive tag. The fixed `nightly` release remains the latest-update entry point, including for existing clients. Builds are also posted to the [Telegram channel](https://t.me/duck_detector); there is no stable release yet.
 2. **Install** it on a device running Android 10 or later. Root access is not required.
 3. **Scan.** The first launch asks you to accept the user agreement and to settle a few startup choices: notifications, Live Update, the online revocation refresh used by the TEE check, and package visibility. Scanning then starts by itself, and each card fills in when its detector finishes.
 4. **Read the results** as described below. To report a result or ask for help, [open an issue](https://github.com/eltavine/Duck-Detector-Refactoring/issues) and attach the file saved by **Export Report** at the top of the dashboard; a screenshot of the summary alone is not enough.

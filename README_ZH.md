@@ -38,7 +38,7 @@ DuckDetector 在 Android 设备上采集并关联与安全相关的证据，用�
 
 # 快速上手
 
-1. **下载：** 从 [Nightly 版本](https://github.com/eltavine/Duck-Detector-Refactoring/releases/tag/nightly)下载 APK。Nightly 构建从 `main` 分支发布，并同步推送到 [Telegram 频道](https://t.me/duck_detector)；目前尚无正式版本。
+1. **下载：** 从 [Nightly 版本](https://github.com/eltavine/Duck-Detector-Refactoring/releases/tag/nightly)下载 APK。每个从 `main` 发布的 Nightly 都有独立的 `nightly-yyyy-MM-dd-gitshortHash` 归档标签；固定 `nightly` 发布继续作为最新更新入口，兼容现有客户端。构建也会推送到 [Telegram 频道](https://t.me/duck_detector)；目前尚无正式版本。
 2. **安装：** 安装到 Android 10 及以上版本的设备，无需 Root 权限。
 3. **扫描：** 首次启动时需要同意用户协议，并完成几项启动选项：通知、Live Update、TEE 检查所用的在线吊销数据刷新，以及包可见性。之后扫描会自动开始，每个检测器完成后，对应卡片随即显示结果。
 4. **解读结果：** 参照下文说明。报告结果或寻求帮助时，请[提交 Issue](https://github.com/eltavine/Duck-Detector-Refactoring/issues)，并附上用仪表盘顶部 **Export Report** 保存的报告文件；只有摘要截图是不够的。

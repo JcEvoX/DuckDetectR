@@ -91,6 +91,11 @@ jobs:
             exit 1
           fi
 
+          if [ "${tag_name}" = "nightly" ]; then
+            echo "The nightly tag is reserved for the mutable update channel in build.yml." >&2
+            exit 1
+          fi
+
           if ! git check-ref-format "refs/heads/${DEFAULT_BRANCH}" >/dev/null; then
             echo "Repository default branch name is not a valid git ref: ${DEFAULT_BRANCH}" >&2
             exit 1
@@ -460,11 +465,23 @@ jobs:
           body_path: github-release-note.md
           prerelease: ${{ steps.release_meta.outputs.prerelease }}
           make_latest: ${{ steps.release_meta.outputs.make_latest }}
-          overwrite_files: true
+          overwrite_files: false
           files: |
             ${{ steps.metadata.outputs.apk_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release immutability
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_target.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.immutable')" != true ]; then
+            echo "Published releases must be immutable. Enable repository release immutability." >&2
+            exit 1
+          fi
 
       - name: Clean up signing material
         if: always()
