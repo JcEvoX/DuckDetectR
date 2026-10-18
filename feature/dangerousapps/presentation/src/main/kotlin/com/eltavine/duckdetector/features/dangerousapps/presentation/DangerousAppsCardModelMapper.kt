@@ -91,6 +91,7 @@ class DangerousAppsCardModelMapper {
                 report.suspiciousLowPmInventory -> "Package inventory unusually small"
                 report.packageVisibility == DangerousPackageVisibility.RESTRICTED -> "Inventory visibility limited"
                 report.packageVisibility == DangerousPackageVisibility.UNKNOWN -> "Package inventory unavailable"
+                report.behaviorChecks.any { it.state == HmaCheckState.EXPERIMENTAL_ANOMALY } -> "Experimental UID discrepancy observed"
                 report.behaviorChecks.any { it.state != HmaCheckState.CONSISTENT } -> "Behavior checks incomplete"
                 else -> "No known risky packages"
             }
@@ -143,6 +144,9 @@ class DangerousAppsCardModelMapper {
                 report.packageVisibility == DangerousPackageVisibility.UNKNOWN ->
                     report.issues.firstOrNull()
                         ?: "PackageManager inventory was unavailable or anomalous, so package absence is inconclusive."
+
+                report.behaviorChecks.any { it.state == HmaCheckState.EXPERIMENTAL_ANOMALY } ->
+                    "Some UIDs held non-instant permissions while fresh package queries exposed no association. This experimental observation does not establish a hiding module."
 
                 report.behaviorChecks.any { it.state != HmaCheckState.CONSISTENT } ->
                     "No behavior mismatch was established, but some checks were partial, unavailable or inconclusive. Review each check's scope and controls."
