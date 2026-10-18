@@ -38,6 +38,19 @@ class HmaBehaviorPresentationTest {
         assertEquals("Platform behavior mismatch observed", model.verdict)
     }
 
+    @Test fun `seccomp getpriority evidence stays warning and exports its own check`() {
+        val model = DangerousAppsCardModelMapper().map(report(HmaBehaviorCheck(
+            HmaCheckKind.SECCOMP_UID_FILTER, HmaCheckState.INCONSISTENT,
+            "seccomp(SECCOMP_SET_MODE_FILTER, NEW_LISTENER) returned EBUSY. Kernel 6.1.")))
+        assertEquals(DetectionSeverity.WARNING, model.status.severity)
+        assertEquals(null, model.hmaAlert)
+        assertEquals("Platform behavior mismatch observed", model.verdict)
+        assertTrue(model.summary.contains("seccomp getpriority"))
+        assertTrue(model.context.any {
+            it.label == HmaCheckKind.SECCOMP_UID_FILTER.label && it.value.contains("EBUSY")
+        })
+    }
+
     @Test fun `unavailable checks remain visible without raising a mismatch warning`() {
         val model = DangerousAppsCardModelMapper().map(report(HmaBehaviorCheck(
             HmaCheckKind.BROADCAST_RESULT_TO, HmaCheckState.UNAVAILABLE, "Service unavailable.")))
@@ -55,5 +68,14 @@ class HmaBehaviorPresentationTest {
         assertEquals("Repeated callback timeout asymmetry", model.verdict)
         assertTrue(model.context.any { it.value.contains("lower confidence") })
         assertTrue(model.summary.contains("lower-confidence"))
+    }
+
+    @Test fun `unattributed seccomp setup trap remains informational and incomplete`() {
+        val check = HmaSeccompUidPolicy.evaluate(HmaSeccompUidObservation(
+            HmaSeccompUidEvidence.TRAPPED_INSTALL, 6, 6, 0, 0, -1, -1, false))
+        val model = DangerousAppsCardModelMapper().map(report(check))
+        assertEquals(DetectionSeverity.INFO, model.status.severity)
+        assertEquals("Behavior checks incomplete", model.verdict)
+        assertEquals(null, model.hmaAlert)
     }
 }

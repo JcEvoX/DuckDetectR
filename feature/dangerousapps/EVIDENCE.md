@@ -2,7 +2,7 @@
 
 Status: reviewed
 
-New HMA behavior checks have the coverage and limitations described below.
+HMA behavior checks, including the seccomp getpriority probe, have the coverage and limitations described below.
 
 The Dangerous Apps detector asks whether root managers, hooking frameworks and similar tools are installed, including when package visibility filtering or hiding modules keep them out of PackageManager.
 
@@ -49,9 +49,10 @@ The Dangerous Apps detector asks whether root managers, hooking frameworks and s
 The detection-vector report for these checks comes from [frknkrc44](https://github.com/frknkrc44),
 maintainer of [HMA-OSS](https://github.com/frknkrc44/HMA-OSS), as supplied with the feature request.
 Credit for that report belongs to frknkrc44, not Chunqiu or Wuying. This attribution describes the
-source used here; it makes no claim about independent prior discoveries. The seccomp and kernel
-countermeasures mentioned in the report are not incorporated. No third-party code or text is copied
-or adapted; the implementation uses the documented mechanisms and independent tests below.
+source used here; it makes no claim about independent prior discoveries. The seccomp listener
+mechanism is probed directly; non-seccomp mechanisms are outside this check. No third-party code or
+text is copied or adapted; the implementation uses the documented mechanisms and independent tests
+below.
 
 ### Report coverage
 
@@ -63,9 +64,14 @@ or adapted; the implementation uses the documented mechanisms and independent te
 | 2.0 getPackageInfo exception suppression | PACKAGE_INFO_EXCEPTION | Repeated permission exception difference |
 | 2.0 getApplicationInfo exception suppression | APPLICATION_INFO_EXCEPTION | Repeated permission exception difference |
 | 3.0 getpriority visibility of running hidden UIDs | UID_TASK_VISIBILITY | Repeated task/association difference, without package identity |
+| 3.0 seccomp getpriority interception | SECCOMP_UID_FILTER | NEW_LISTENER EBUSY, suppressed notification or trap; kernel-version-gated |
 
-The seccomp and kernel approaches in point 3.0 are countermeasures. Refused native queries retain
-permission-limited/unavailable states; their absence cannot establish that no app is hidden.
+The seccomp approach in point 3.0 is probed directly. A
+[NEW_LISTENER install returns EBUSY](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/kernel/seccomp.c?h=v5.0)
+when an existing filter already owns a listener; when no listener exists, the probe counts
+getpriority notifications and reports queries a foreign filter answered first. Non-seccomp
+mechanisms are outside this check. Refused or incomplete native queries retain their explicit
+states; their absence cannot establish that no app is hidden.
 
 ### Permission-exception consistency
 
@@ -86,10 +92,14 @@ permission-limited/unavailable states; their absence cannot establish that no ap
   [UserController.handleIncomingUser](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/services/core/java/com/android/server/am/UserController.java),
   and Android 16 [ComputerEngine](https://android.googlesource.com/platform/frameworks/base/+/android-16.0.0_r1/services/core/java/com/android/server/pm/ComputerEngine.java)
   / [BroadcastController](https://android.googlesource.com/platform/frameworks/base/+/android-16.0.0_r1/services/core/java/com/android/server/am/BroadcastController.java).
+  Android 17 keeps the same MATCH_ANY_USER requirement
+  ([ComputerEngine.updateFlagsForPackage](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/pm/ComputerEngine.java),
+  [UserController.handleIncomingUser](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/am/UserController.java),
+  [ApplicationPackageManager.getPackageInfoAsUser](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/core/java/android/app/ApplicationPackageManager.java)).
 - Upstream implementation references: HMA-OSS [oss-164 BroadcastHook](https://github.com/frknkrc44/HMA-OSS/blob/oss-164/zygote/src/main/java/org/frknkrc44/hma_oss/zygote/hook/BroadcastHook.kt)
   returns before the framework permission path; [oss-173 PmsHookTargetBase](https://github.com/frknkrc44/HMA-OSS/blob/oss-173/zygote/src/main/java/org/frknkrc44/hma_oss/zygote/hook/PmsHookTargetBase.kt)
   preserves existing exceptions. These are version/configuration fingerprints, not generic Zygisk tests.
-- Applicability: Android 10–16 (API 29–36); later releases explicitly return unsupported pending
+- Applicability: Android 10–17 (API 29–37); later releases explicitly return unsupported pending
   source verification. Privileged callers, OEM changes or failed hidden-method lookup invalidate
   controls and yield inconclusive results.
 - Visibility limits: at most 128 distinct catalog targets absent from the current inventory are
@@ -117,10 +127,13 @@ permission-limited/unavailable states; their absence cannot establish that no ap
   and Android 16 [BroadcastQueueImpl.enqueueBroadcastLocked / scheduleResultTo](https://android.googlesource.com/platform/frameworks/base/+/android-16.0.0_r1/services/core/java/com/android/server/am/BroadcastQueueImpl.java)
   schedule the final receiver when no receivers matched, passing the original intent and initial
   results through IApplicationThread with ordered=false. No platform deadline of 1 s is guaranteed.
+  Android 17's
+  [BroadcastQueueImpl.scheduleResultTo](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/am/BroadcastQueueImpl.java)
+  keeps the same ordered=false contract.
 - Upstream references: HMA-OSS [oss-164 BroadcastHook](https://github.com/frknkrc44/HMA-OSS/blob/oss-164/zygote/src/main/java/org/frknkrc44/hma_oss/zygote/hook/BroadcastHook.kt)
   returns before queuing and omits final result delivery; [oss-173 BroadcastHook](https://github.com/frknkrc44/HMA-OSS/blob/oss-173/zygote/src/main/java/org/frknkrc44/hma_oss/zygote/hook/BroadcastHook.kt)
   manually invokes performReceive with the BroadcastRecord.ordered flag.
-- Applicability: API 29–36; up to 128 distinct targets absent from inventory. Already corroborated
+- Applicability: API 29–37; up to 128 distinct targets absent from inventory. Already corroborated
   targets and targets showing repeated permission-exception anomalies receive priority within the
   callback budget. Scope and completed-pair counts remain visible; prioritization adds no confidence.
   The report does not assert the behavior of an unspecified newer HMA test build.
@@ -167,22 +180,84 @@ permission-limited/unavailable states; their absence cannot establish that no ap
   package identity. A completed scan only covers the stated user/range at sampling time. Seccomp,
   namespaces and kernel filtering can hide tasks; no absent task means no installed package.
 - Result states: consistent, inconsistent, inconclusive, partial, permission limited, unavailable,
-  unsupported. UID-only mismatches are warnings and never add a named hidden package or red HMA alert.
+  unsupported. A mismatch that identifies only a UID and not a package is a warning and never
+  adds a named hidden package or red HMA alert.
   A completed scan must observe the live caller. A partial scan that visited the caller's UID but
   omitted it also invalidates the comparison.
   A partial scan that has not reached that UID remains partial; its start UID and visited count are
   retained so callers in secondary Android users receive the same control semantics.
 
+### Seccomp getpriority interference
+
+The seccomp extension was introduced by KodateMitsuru in PR #390. The broader detection-vector
+report remains attributed to frknkrc44 above; this extension is a separate observation of the
+filter stack, not an implementation of the concealment countermeasures named in that report.
+
+- Observable signals: an actual NEW_LISTENER install returning EBUSY; missing notifications after
+  the entire query range completes; or a query TRAP whose siginfo identifies getpriority on the
+  compiled ABI. None of these identifies HMA or a specific filtering module.
+- Producing subsystem: the inherited kernel seccomp stack. ACK's action-precedence loop selects
+  the highest-priority action, and its duplicate-listener check can reject another listener.
+- Mechanism: a disposable coordinator checks GET_NOTIF_SIZES against its bounded notification
+  structures, prepares no_new_privs and installs an ABI-checked filter. Its query child probes the
+  current user's ordinary app UID range. Accepted notifications receive a synthetic zero result
+  with flags=0: the underlying priority syscall need not execute to observe filter precedence.
+  This avoids CONTINUE, which Linux 5.0's seccomp_notify_send rejects. The separate UID-visibility
+  probe still performs real priority queries.
+- Primary references: ACK android14-6.1 at
+  [48e3cd973485465613da6d71fa17139773546573:kernel/seccomp.c](https://android.googlesource.com/kernel/common/+/48e3cd973485465613da6d71fa17139773546573/kernel/seccomp.c)
+  (`has_duplicate_listener`, `seccomp_set_mode_filter`, `seccomp_notify_recv/send`, action loop);
+  matching ACK android15-6.6 at
+  [150617c4d667a241e52441e855befac0c5d6702b:kernel/seccomp.c](https://android.googlesource.com/kernel/common/+/150617c4d667a241e52441e855befac0c5d6702b/kernel/seccomp.c)
+  for the emulator kernel family;
+  [Linux v5.0 seccomp.c](https://github.com/torvalds/linux/blob/v5.0/kernel/seccomp.c)
+  (`init_listener` and the requirement that notification response flags be zero);
+  [kernel seccomp documentation](https://docs.kernel.org/userspace-api/seccomp_filter.html)
+  (architecture checks, runtime notification sizes and action precedence);
+  [ACK signal delivery](https://android.googlesource.com/kernel/common/+/48e3cd973485465613da6d71fa17139773546573/kernel/seccomp.c)
+  (`seccomp_send_sigsys` includes syscall and architecture);
+  [PR_SET_PDEATHSIG](https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html).
+  Framework API 37 contracts were independently checked in the Android 17 ComputerEngine,
+  ApplicationPackageManager, UserController and BroadcastQueueImpl sources linked below.
+- Lifetime and bounds: filters remain in disposable descendants. The query child sets a parent-death
+  SIGKILL, checks the parent PID to close the setup race, and requires a working 3 s alarm. It closes
+  its copy of the report descriptor. The coordinator uses a 1.8 s query budget and bounded nonblocking
+  reaping after cancellation. It owns SIGCHLD handling only in the disposable coordinator and avoids
+  signaling a PID when waitpid reports lost child ownership. The common runner has 2.5 s run / 250 ms reap deadlines. Kernel tasks
+  temporarily stuck in an uninterruptible state can still delay final destruction. Poll/send EINTR
+  handling retains deadlines; a blocked notification ioctl is bounded by coordinator termination.
+- Applicability: Android 10–17/API 29–37, four supported ABIs. The runtime size handshake, rather
+  than a release-number assumption, checks notification ABI compatibility. EBUSY is interpreted
+  conservatively only on kernel major >= 5. Older kernels/backports and unknown versions may be
+  unsupported or inconclusive. Linux 5.0 compatibility is source-verified, not device-tested.
+- Visibility limits: an unrelated listener has the same collision signal. An inherited filter can
+  synthesize EBUSY, and an intercepted syscall wrapper can also affect observations. Successful
+  notifications exclude only higher-priority suppression of these calls; they do not exclude
+  all filters or kernel-based hiding. OEM policy may differ. Query suppression is interpreted only
+  after successful completion, with consistent counts and suppression endpoints.
+- Failure states: an unqualified coordinator SIGSYS is permission limited. A query SIGSYS without
+  syscall/ABI attribution, other signals, timeout or service failure remains inconclusive/unavailable.
+  No setup trap is promoted to a getpriority finding. Errors in the capability/privilege setup are
+  not listener-collision evidence. Contradictory native payload errors/counts are rejected.
+- Interpretation: warning-level evidence requires an observed listener collision, complete-range
+  suppression, or a specifically attributed getpriority TRAP. A completed clean label also requires
+  the caller notification control. Incomplete or refused checks prevent an all-clear conclusion.
+
 ### Validation coverage
 
 Unit tests cover repeated permission controls, public-wrapper NameNotFoundException conversion,
 failed controls, ordered/sticky/payload callback differences, timeout uncertainty, native payload
-framing, raw priority conversion, partial scans and warning-level presentation. Callback tests also
-cover interleaved controls, paired timeout asymmetry, call correlation, batch interruption and external
-cancellation. The native parent validates child counts before indexing fixed buffers; Kotlin also
-rejects unsorted hits, UIDs beyond the visited prefix and success states carrying collection errors. Native builds cover
-all four supported ABIs. Device results are recorded after executing the runtime checks; no HMA
-version or configuration is assumed from package presence alone.
+framing, raw priority conversion, partial scans and warning-level presentation. The seccomp
+probe's payload framing, EBUSY kernel-version gate, suppression/trap classification and
+presentation are covered by JVM tests. Callback tests also cover interleaved controls, paired
+timeout asymmetry, call correlation, batch interruption and external cancellation. The native parent
+validates child counts before indexing fixed buffers; Kotlin also rejects unsorted hits, UIDs beyond
+the visited prefix and success states carrying collection errors. Native builds cover all four
+supported ABIs. Device results for the original behavior checks are recorded after executing the
+runtime checks; the original PR author supplied API 37 positive/negative observations below.
+Those observations have not been independently reproduced. Review validation adds Android 16
+emulator kernel cases and scanner/export coverage. No HMA version or configuration is assumed from package presence
+alone.
 
 The monitored catalog includes `org.frknkrc44.hma_oss`, as declared by the upstream HMA-OSS
 application and observed in the device package inventory. Target prioritization affects sampling
@@ -201,6 +276,7 @@ in the intervening release sources:
 | android-13.0.0_r1 | [ComputerEngine](https://android.googlesource.com/platform/frameworks/base/+/android-13.0.0_r1/services/core/java/com/android/server/pm/ComputerEngine.java) | [BroadcastQueue](https://android.googlesource.com/platform/frameworks/base/+/android-13.0.0_r1/services/core/java/com/android/server/am/BroadcastQueue.java) |
 | android-15.0.0_r1 | [ComputerEngine](https://android.googlesource.com/platform/frameworks/base/+/android-15.0.0_r1/services/core/java/com/android/server/pm/ComputerEngine.java) | [BroadcastQueueModernImpl](https://android.googlesource.com/platform/frameworks/base/+/android-15.0.0_r1/services/core/java/com/android/server/am/BroadcastQueueModernImpl.java) |
 | android-16.0.0_r1 | ComputerEngine linked above | [BroadcastQueueImpl](https://android.googlesource.com/platform/frameworks/base/+/android-16.0.0_r1/services/core/java/com/android/server/am/BroadcastQueueImpl.java) |
+| android-17.0.0_r1 | [ComputerEngine](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/pm/ComputerEngine.java) | [BroadcastQueueImpl](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/am/BroadcastQueueImpl.java) |
 
 #### Device observations before callback-coverage revision (2026-10-18, Asia/Singapore)
 
@@ -223,10 +299,24 @@ scope, interleaved controls and intent-token check still need a fresh PJX110 run
 was attached during the revision. The unit tests exercise missing-resultTo and wrong-resultTo paths
 with structured observations, not an actual oss-164/173 installation.
 
+#### Contributor-reported seccomp control run (2026-10-18, before review fixes)
+
+The PR author reported Android 17/API 37, arm64, Linux 6.1. A controlled run with a pre-existing seccomp
+user-notification listener for getpriority(PRIO_USER, *) produced
+`Behavior mismatch observed`; the captured detail began
+`seccomp(SECCOMP_SET_MODE_FILTER` (the EBUSY branch). A second run with the unmodified process
+filter stack produced `Consistent in evaluated scope` with all 10000 queries notified. Both runs
+used the same app build and package catalog. The repository does not include the raw logs or a
+complete device fingerprint for this claim; it is retained as contributor-reported coverage, not an
+independent review result. Scan duration is not used as evidence.
+
 The nine queried names are behavior fingerprints, not proof that nine corresponding apps are
 installed. The eight UIDs do not identify hidden packages. These observations do not validate
 HMA-OSS 173's manual-resultTo positive case, a newer fixed test release, or an HMA-disabled/stock
-baseline. No enforced seccomp-denial profile was installed. Older Android releases and other ABIs have source/build coverage, not device coverage.
+baseline. The physical-device observations used no enforced seccomp-denial profile. Review experiments
+install temporary refusal filters only in disposable emulator test processes; the application probe
+installs its ALLOW/USER_NOTIF listener only in a disposable child. Older Android releases and other ABIs have
+source/build coverage, not device coverage.
 
 Reproduce the runtime smoke check after building and installing the debug and androidTest APKs:
 
@@ -243,7 +333,9 @@ The context bootstrap instrumented test and MainActivity cold-launch smoke check
 The runtime harness uses AndroidX Test Runner 1.7.0 with the existing JUnit extension 1.3.0;
 [runner documentation](https://developer.android.com/training/testing/instrumented-tests/androidx-test-libraries/runner)
 and [release notes](https://developer.android.com/jetpack/androidx/releases/test) establish the
-runtime dependency. Forty-one new JVM tests cover the exception, callback, UID policy, native framing and presentation rules.
+runtime dependency. The HMA JVM tests cover the exception, callback, UID policy, seccomp listener
+payload, native framing and presentation rules; the seccomp probe adds domain, payload and
+presentation cases.
 
 
 The following validation commands passed with the repository-pinned uihelper revision
@@ -278,7 +370,8 @@ session was stopped after testing without saving a snapshot.
 
 The revised sources passed the full unit/app/lint/buildHealth/SDK command above, the standalone SDK
 consumer build and all repository guards. These emulator observations apply to commit
-`3db22f0a0dc3b94411320c786f17173b38a79a47`; current JVM coverage includes 41 HMA tests. Device coverage
+`3db22f0a0dc3b94411320c786f17173b38a79a47`; current JVM coverage includes the HMA behavior, seccomp
+listener and presentation tests. Device coverage
 for oss-164 callback omission, oss-173 wrong final flags, newer fixed builds and enforced seccomp refusal
 remains open; PJX110 observations above apply to the earlier implementation.
 
@@ -302,3 +395,27 @@ failed before the fixes and passed afterward. Validation for these refinements u
 ./gradlew -p samples/sdk-consumer assembleDebug
 for s in .github/scripts/check-*.py; do python3 "$s" || exit 1; done
 ```
+
+#### Seccomp review validation (Android 16 emulator)
+
+The production native collector was compiled directly with NDK 30 for arm64 API 29 and tested in
+an API 36 / kernel 6.6 read-only emulator session. Eight disposable-filter cases cover a complete
+baseline, one-UID ERRNO suppression, an inherited listener, attributed query TRAP, unrelated setup
+TRAP, unqualified SIGSYS kill, repeated EINTR deadline exhaustion, and coordinator death while a
+query remains blocked on a listener held by the test supervisor. All eight passed. The supervisor
+uses subreaper ownership to verify query cleanup; no test filter is installed in the app process.
+
+```sh
+python3 feature/dangerousapps/data/src/test/python/test_seccomp_uid_native.py \
+  --ndk "$ANDROID_NDK_HOME" --serial emulator-5580 --adb "$ANDROID_HOME/platform-tools/adb"
+```
+
+The revised app's generic DetectorRuntimeSmokeTest completed two scanner/export runs (`OK (1 test)`,
+9.887 s). Both seccomp checks received all 10,000 notifications with a caller control and produced a
+consistent result. The emulator fingerprint/kernel match the Android 16 comparison above. No
+physical device was attached, and the contributor's API 37 positive run was not reproduced.
+
+Review verification passed: 58 HMA JVM regressions, the full unit/app/lint/SDK AAR command shown
+above, the standalone SDK consumer and all repository guards. Debug and Release native builds
+cover arm64-v8a, armeabi-v7a, x86 and x86_64. Native status claims require their supporting errno or
+signal, and complete payloads cannot carry collection errors or impossible suppression endpoints.
