@@ -90,4 +90,5 @@ limitations under the License.
     <string name="update_status_current">You have the latest Nightly build</string>
     <string name="update_status_failed">Could not check GitHub, tap to retry</string>
     <string name="update_status_idle">Checks Main Nightly on GitHub after a cold start, tap to check now</string>
+    <string name="settings_manage_permissions">Manage app permissions</string>
 </resources>

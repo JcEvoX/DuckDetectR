@@ -47,7 +47,7 @@ limitations under the License.
     <string name="startup_preparing_detail">Loading agreement state before startup policy review.</string>
     <string name="startup_before_scan_title">Before the scan</string>
     <string name="startup_loading_detail">Preferences and PackageManager visibility are still being loaded. Detector ViewModels stay paused until this completes.</string>
-    <string name="startup_intro_detail">Finish the required choices before detector scans begin. Notifications, Live Update routing, CRL online refresh, and PackageManager visibility are reviewed here in one place. The detector pipeline remains blocked until every required card below is settled.</string>
+    <string name="startup_intro_detail">Review notifications, optional detector permissions and package visibility before scanning. Optional diagnostics can stay off. You can change these choices later in Settings.</string>
     <string name="startup_loading_state">Loading startup state…</string>
     <string name="startup_progress_resolved">%1$d of %2$d startup cards resolved</string>
     <string name="startup_loading_dependencies_title">Loading startup dependencies</string>
@@ -101,4 +101,5 @@ limitations under the License.
     <string name="startup_package_ready_headline">PackageManager inventory looks full.</string>
     <string name="startup_package_ready_detail">Current visible package count: %1$d. Dangerous Apps can use the standard package inventory path.</string>
     <string name="update_apk_unavailable">The downloaded update is unavailable; download it again</string>
+    <string name="detector_manage_permissions">Manage app permissions</string>
 </resources>

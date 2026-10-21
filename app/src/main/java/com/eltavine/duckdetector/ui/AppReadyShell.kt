@@ -193,15 +193,21 @@ internal fun AppReadyShell(
             gitHubAccelerationEnabled = gitHubAcceleration == GitHubAcceleration.ENABLED,
         )
     }
+    val onDecideDetectorConsent = rememberConsentDecisionHandler { id ->
+        detectorSessions.first { it.id == id }.rescan()
+    }
+    val openPermissionSettings = rememberAppPermissionSettings {
+        val permissionDetectorIds = DetectorFeatures.consentCards.filter { it.card.runtimePermissions.isNotEmpty() }
+            .map { it.detectorId }.toSet()
+        detectorSessions.filter { it.id in permissionDetectorIds }.forEach { it.rescan() }
+    }
     val consentToggles = DetectorFeatures.consentCards.map { consentCard ->
         ConsentToggle(
             setting = consentCard.card.setting,
+            onManagePermissions = if (consentCard.card.runtimePermissions.isEmpty()) null else openPermissionSettings,
             checked = consentDecisions.getValue(consentCard.consent.id) == ConsentDecision.GRANTED,
             onCheckedChange = { enabled ->
-                scope.launch {
-                    consentCard.consent.decide(appContext, enabled)
-                    detectorSessions.first { it.id == consentCard.detectorId }.rescan()
-                }
+                onDecideDetectorConsent(consentCard, enabled)
             },
         )
     }

@@ -39,4 +39,5 @@ internal fun ConsentSettingItem(
         index = index,
         count = count,
     )
+    toggle.onManagePermissions?.let { ConsentPermissionButton(it) }
 }
