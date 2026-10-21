@@ -109,7 +109,7 @@ queries the target or has broad visibility can also observe its installation-tim
 
 ### Tool-specific channels
 
-- Observable signal: the Scene loopback and broadcast channels, Thanox IPC, and enabled accessibility services.
+- Observable signal: the Scene loopback and broadcast channels and enabled accessibility services.
 - Producing subsystem: the tools' own services.
 - Mechanism: these tools answer on fixed local channels.
 - References: Discovery only: the channels follow each tool's observed behaviour.
@@ -117,6 +117,23 @@ queries the target or has broad visibility can also observe its installation-tim
 - Visibility limits: a tool that is installed but not running does not answer.
 - Result states: detected, clean.
 - Interpretation: an answering tool is a finding for that tool.
+
+### Thanox runtime IPC
+
+- Observable signal: the custom transaction on Android's system `dropbox` service returns a strong Binder whose interface descriptor is exactly `github.tornaco.android.thanos.core.IThanos`.
+- Producing subsystem: Binder userspace dispatch and the Thanox DropBox service proxy. The system `dropbox` registration alone identifies Android's diagnostic service, not Thanox.
+- Mechanism: send the IThanos interface token with the upstream transaction code, require the transaction to be handled, read the raw returned Binder and verify that Binder's descriptor. The reply has no ordinary AIDL exception header. A nonempty reply, `transact=true`, or a matching descriptor on the outer system-service Binder is insufficient.
+- References: Android [Context.DROPBOX_SERVICE](https://developer.android.com/reference/android/content/Context#DROPBOX_SERVICE) and [IBinder](https://developer.android.com/reference/android/os/IBinder); AOSP Android 16 [Binder.execTransactInternal](https://android.googlesource.com/platform/frameworks/base/+/android-16.0.0_r1/core/java/android/os/Binder.java), which serializes remote exceptions and returns true; Thanox commit `d964e8938f16fce086ff5febbf99b4cabd86cfc1` [DropBoxManagerProxyProvider](https://github.com/Tornaco/Thanox/blob/d964e8938f16fce086ff5febbf99b4cabd86cfc1/android/android_framework/patch-magisk/bridge/src/main/java/github/tornaco/android/thanox/magisk/bridge/proxy/content/DropBoxManagerProxyProvider.java), [ThanosManagerNative](https://github.com/Tornaco/Thanox/blob/d964e8938f16fce086ff5febbf99b4cabd86cfc1/android/android_framework/base/src/main/java/github/tornaco/android/thanos/core/app/ThanosManagerNative.java) and [IThanos.aidl](https://github.com/Tornaco/Thanox/blob/d964e8938f16fce086ff5febbf99b4cabd86cfc1/android/android_framework/base/src/main/java/github/tornaco/android/thanos/core/IThanos.aidl).
+- Applicability: public Binder/Parcel operations on the project's Android API 29+ baseline, every ABI; service lookup uses the existing hidden ServiceManager adapter. Protocol compatibility is established against the pinned Thanox implementation, not every release or fork. No OEM exemption or additional permission is used.
+- Visibility limits: a disabled, blocked or changed service can evade this channel; interface descriptors are not cryptographic identities. A matching runtime server does not prove the manager APK is installed for the current user or absent from PackageManager due to concealment. Synchronous Binder calls have no probe-enforced deadline; cancellation propagates when control returns and Parcels are recycled.
+- Result states: not collected, transaction unhandled/no compatible service observed, matching runtime interface, unavailable, inconclusive. Empty/null/malformed replies and wrong descriptors never become package hits; transport and lookup failures never become a clean negative.
+- Interpretation: a matching interface is a separate runtime warning. It does not add to installed-package findings, hidden counts or HMA corroboration. Incomplete IPC coverage prevents an otherwise all-clear result; independent package and HMA evidence retain their previous grading. This addresses issue #379's permissive nonempty-reply rule without assuming what the OriginOS service actually returned.
+
+`ThanoxIpcRuntimeTest` exercises actual Android Parcel/Binder objects with valid-token enforcement, a matching server, serialized remote exceptions, nonempty AIDL success headers without a Binder, empty/null replies, wrong/missing descriptors, lookup and transport failures, cancellation and the stock framework service. The presentation and hidden-package policy regressions verify that runtime results never fabricate package installation or HMA concealment.
+
+All 14 runtime cases passed on arm64 API 29 (`google/sdk_gphone64_arm64/emulator64_arm64:10/QSR1.211112.011/13135432:userdebug/dev-keys`) and API 36 (`google/sdk_gphone64_arm64/emu64a:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`) emulators. The real framework DropBox query returned `NOT_OBSERVED` on both. Positive and error-response cases use local Binder fixtures, not an installed Thanox release or an OriginOS device. This validates the Parcel protocol handling, not every OEM service implementation.
+
+To repeat, build `:feature:dangerousapps:data:assembleDebugAndroidTest`, install the test APK, then run `adb shell am instrument -w -r -e class com.eltavine.duckdetector.features.dangerousapps.data.probes.ThanoxIpcRuntimeTest com.eltavine.duckdetector.features.dangerousapps.data.test/androidx.test.runner.AndroidJUnitRunner` on a stock test emulator.
 
 
 ## HMA behavior checks

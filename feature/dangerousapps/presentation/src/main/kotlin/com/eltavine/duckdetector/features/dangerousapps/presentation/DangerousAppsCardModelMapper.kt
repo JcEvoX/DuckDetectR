@@ -25,6 +25,7 @@ import com.eltavine.duckdetector.features.dangerousapps.domain.DangerousAppsStag
 import com.eltavine.duckdetector.features.dangerousapps.domain.DangerousPackageVisibility
 import com.eltavine.duckdetector.features.dangerousapps.domain.HmaCheckState
 import com.eltavine.duckdetector.features.dangerousapps.domain.PackageChangeHistoryState
+import com.eltavine.duckdetector.features.dangerousapps.domain.ThanoxIpcState
 import com.eltavine.duckdetector.features.dangerousapps.domain.toDetectorStatus
 import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsCardModel
 import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsContextItemModel
@@ -90,12 +91,14 @@ class DangerousAppsCardModelMapper {
                 report.behaviorChecks.any { it.state == HmaCheckState.INCONSISTENT } -> "Platform behavior mismatch observed"
                 report.behaviorChecks.any { it.state == HmaCheckState.TIMING_ANOMALY } -> "Repeated callback timeout asymmetry"
                 report.detectedCount > 0 -> "${report.detectedCount} risky package(s) surfaced"
+                report.thanoxIpc.state == ThanoxIpcState.MATCHED -> "Thanox-compatible runtime service observed"
                 report.suspiciousSharedStorageDenied -> "Shared storage baseline denied"
                 report.suspiciousLowPmInventory -> "Package inventory unusually small"
                 report.packageVisibility == DangerousPackageVisibility.RESTRICTED -> "Inventory visibility limited"
                 report.packageVisibility == DangerousPackageVisibility.UNKNOWN -> "Package inventory unavailable"
                 report.behaviorChecks.any { it.state == HmaCheckState.EXPERIMENTAL_ANOMALY } -> "Experimental UID discrepancy observed"
                 report.behaviorChecks.any { it.state != HmaCheckState.CONSISTENT } -> "Behavior checks incomplete"
+                !report.thanoxIpc.complete -> "Thanox IPC check incomplete"
                 report.packageChangeHistory.state != PackageChangeHistoryState.AVAILABLE -> "Package change history incomplete"
                 report.packageChangeHistory.matchedTargets.isNotEmpty() -> "Package change history observed"
                 else -> "No known risky packages"
@@ -137,6 +140,9 @@ class DangerousAppsCardModelMapper {
                         }
                     }
 
+                report.thanoxIpc.state == ThanoxIpcState.MATCHED ->
+                    "A returned Binder matched the Thanox runtime interface. This does not establish installation of the manager APK or package concealment."
+
                 report.suspiciousSharedStorageDenied ->
                     "Multiple fixed shared-storage baseline paths returned EACCES/EPERM under stat(). This suggests shared user gid or related zygote storage groups may have been restricted."
 
@@ -155,6 +161,9 @@ class DangerousAppsCardModelMapper {
 
                 report.behaviorChecks.any { it.state != HmaCheckState.CONSISTENT } ->
                     "No behavior mismatch was established, but some checks were partial, unavailable or inconclusive. Review each check's scope and controls."
+
+                !report.thanoxIpc.complete ->
+                    "The Thanox IPC check was unavailable or its reply could not be identified. No package presence or concealment is inferred from this response."
 
                 report.packageChangeHistory.state != PackageChangeHistoryState.AVAILABLE ->
                     "The package change history query did not complete successfully. Its missing evidence cannot establish that monitored packages have not appeared."
@@ -271,6 +280,7 @@ class DangerousAppsCardModelMapper {
             ),
             DangerousAppsContextItemModel("Categories", categories),
             DangerousAppsContextItemModel("Probe families", probeSummary),
+            report.thanoxIpc.toContextItem(),
         ) + report.behaviorChecks.map { check ->
             DangerousAppsContextItemModel(check.kind.label, buildString {
                 append("${check.state.label}. ${check.detail}")
