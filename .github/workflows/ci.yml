@@ -79,6 +79,7 @@ jobs:
           set -euo pipefail
 
           python3 core/native/src/test/python/test_mount_id_observation.py
+          python3 core/native/src/test/python/test_installed_package_path.py
           for suite in feature/*/data/src/test/python; do
             # Device-driven scripts need their own runner; discover only host suites here.
             compgen -G "${suite}/test_*_host_native.py" > /dev/null || continue

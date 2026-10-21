@@ -17,11 +17,14 @@
 
 #pragma once
 
+#include "common/installed_package_path.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -51,12 +54,22 @@ namespace duckdetector::zygisk {
         std::string detail;
     };
 
+    enum class HeuristicFamily {
+        kLoaderPath,
+        kMapStructure,
+        kSolist,
+        kAtexit,
+        kDirtySystemCode,
+        kThreads,
+        kHeapEntropy,
+    };
+
     struct ProbeResult {
         bool available = true;
         bool supported = true;
         int hit_count = 0;
         int strong_hits = 0;
-        int heuristic_hits = 0;
+        std::set<HeuristicFamily> heuristic_families;
         int numeric_value = 0;
         std::vector<Trace> traces;
     };
@@ -218,7 +231,7 @@ namespace duckdetector::zygisk {
     }
 
     inline bool is_suspicious_loader_keyword(const std::string &path) {
-        const auto lower = lowercase_copy(path);
+        const auto lower = lowercase_copy(package_paths::without_install_tokens(path));
         return lower.find("zygisk") != std::string::npos ||
                lower.find("magisk") != std::string::npos ||
                lower.find("riru") != std::string::npos ||

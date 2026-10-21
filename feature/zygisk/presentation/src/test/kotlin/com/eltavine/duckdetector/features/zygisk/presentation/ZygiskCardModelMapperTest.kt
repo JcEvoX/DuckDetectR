@@ -80,6 +80,15 @@ class ZygiskCardModelMapperTest {
     fun `two heuristic signals escalate to danger`() {
         val model = mapper.map(report(heuristicHitCount = 2))
         assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals("2 heuristic families converged", model.verdict)
+        assertEquals(
+            "Multiple heuristic families surfaced in the current process. Review the individual findings and benign causes; these observations do not establish Zygisk injection.",
+            model.summary,
+        )
+        assertEquals(
+            "Multiple heuristic families need review. Their convergence does not establish Zygisk injection.",
+            model.impactItems.first().text,
+        )
     }
 
     @Test

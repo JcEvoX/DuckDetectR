@@ -54,7 +54,7 @@ namespace duckdetector::zygisk {
                                             detail,
                                     });
             result.hit_count = 1;
-            result.heuristic_hits = 1;
+            result.heuristic_families.insert(HeuristicFamily::kAtexit);
         }
 
         return result;
