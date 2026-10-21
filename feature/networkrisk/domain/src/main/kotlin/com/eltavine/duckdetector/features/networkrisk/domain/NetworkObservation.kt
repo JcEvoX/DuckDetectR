@@ -56,6 +56,7 @@ data class NetworkSnapshot(
     val boundNetwork: NetworkObservation<Long>,
     val defaultProxy: NetworkObservation<ProxyConfiguration>,
     val visibleNetworks: NetworkObservation<List<VisibleNetwork>>,
+    val proxySources: ProxySourceCheck? = null,
 )
 enum class SampleConsistency { REPEATED, CHANGED }
 data class NetworkSampleWindow(

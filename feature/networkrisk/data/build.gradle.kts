@@ -27,6 +27,7 @@ dependencies {
     api(project(":core:detector"))
     implementation(project(":core:evidence"))
     api(project(":feature:networkrisk:domain"))
+    implementation(project(":capability:systemproperties:data"))
     implementation(project(":capability:packageinventory:data"))
     implementation(project(":capability:packageinventory:domain"))
     implementation(libs.kotlinx.coroutines.android)

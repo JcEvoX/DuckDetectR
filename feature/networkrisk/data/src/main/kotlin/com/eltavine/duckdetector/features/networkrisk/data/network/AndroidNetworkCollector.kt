@@ -45,6 +45,14 @@ internal class AndroidNetworkCollector(context: Context) {
                 defaultNetwork = raw.defaultNetwork.map { it.networkHandle },
                 boundNetwork = raw.boundNetwork.map { it.networkHandle },
                 defaultProxy = raw.defaultProxy.map { it.toConfiguration() },
+                proxySources = ProxySourceCheck(
+                    jvmHttpProxy = raw.jvmProxy.project(),
+                    comparison = compareProxySources(
+                        raw.defaultProxy.map { it.toConfiguration() }, raw.jvmProxy.project(),
+                        sameEndpoint = raw.defaultProxy.value?.host?.equals(raw.jvmProxy.value?.host, ignoreCase = true) == true &&
+                            raw.defaultProxy.value?.port == raw.jvmProxy.value?.port?.toIntOrNull(),
+                    ),
+                ),
                 visibleNetworks = raw.networks.map { networks -> networks.map { (network, properties) ->
                     VisibleNetwork(network.networkHandle, properties.first.map { it.transports() }, properties.second.map { it.toContext() })
                 } },
@@ -61,6 +69,7 @@ internal class AndroidNetworkCollector(context: Context) {
         val boundNetwork: NetworkObservation<Network>,
         val defaultProxy: NetworkObservation<ProxyInfo>,
         val networks: NetworkObservation<RawNetworks>,
+        val jvmProxy: NetworkObservation<JvmHttpProxyValues>,
     )
 
     @Suppress("DEPRECATION")
@@ -68,6 +77,7 @@ internal class AndroidNetworkCollector(context: Context) {
         val default = query { manager?.activeNetwork }
         val bound = query { manager?.boundNetworkForProcess }
         val proxy = query { manager?.defaultProxy }
+        val jvmProxy = readJvmHttpProxy()
         val networks: NetworkObservation<RawNetworks> = query {
             manager?.allNetworks?.toSet()?.plus(listOfNotNull(default.value, bound.value))
         }.let { result ->
@@ -80,7 +90,7 @@ internal class AndroidNetworkCollector(context: Context) {
                 }
             }
         }
-        return RawSnapshot(default, bound, proxy, networks)
+        return RawSnapshot(default, bound, proxy, networks, jvmProxy)
     }
 
     private fun <T> query(block: () -> T?): NetworkObservation<T> {

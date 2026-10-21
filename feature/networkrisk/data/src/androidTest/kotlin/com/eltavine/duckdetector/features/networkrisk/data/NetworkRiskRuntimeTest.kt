@@ -17,6 +17,8 @@
 
 package com.eltavine.duckdetector.features.networkrisk.data
 
+import android.net.ConnectivityManager
+import android.net.Uri
 import android.os.Build
 import android.os.Process
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,6 +31,7 @@ import com.eltavine.duckdetector.features.networkrisk.domain.*
 import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Assume.assumeTrue
 import org.junit.runner.RunWith
 
 /** Ordinary-UID smoke tests; fixture packages and proxy setting are configured outside the app. */
@@ -58,6 +61,27 @@ class NetworkRiskRuntimeTest {
             val hit = inventory.clients.single { it.packageName == packageName }
             assertEquals(packageName, ObservationState.OBSERVED, hit.state)
             assertEquals(packageName, ClientIdentity.SIGNATURE_VERIFIED, hit.identity)
+        }
+    }
+
+    @Test fun processLocalJvmOverrideIsAnInconclusiveDifference() {
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val framework = manager.defaultProxy
+        assumeTrue(framework?.pacFileUrl == null || framework.pacFileUrl == Uri.EMPTY)
+        val previousHost = System.getProperty("http.proxyHost")
+        val previousPort = System.getProperty("http.proxyPort")
+        val differentPort = if (framework?.port == 7890) "7891" else "7890"
+        try {
+            System.setProperty("http.proxyHost", "jvm-override.invalid")
+            System.setProperty("http.proxyPort", differentPort)
+            val sources = requireNotNull(AndroidNetworkCollector(context).collect().snapshot.proxySources)
+            assertEquals(NetworkObservation.observed(differentPort.toInt()), sources.jvmHttpProxy)
+            assertEquals(ProxySourceComparison.DIFFERENT, sources.comparison)
+            assertEquals(ObservationState.INCONCLUSIVE, sources.comparison.toObservationState())
+            assertEquals(framework, manager.defaultProxy)
+        } finally {
+            if (previousHost == null) System.clearProperty("http.proxyHost") else System.setProperty("http.proxyHost", previousHost)
+            if (previousPort == null) System.clearProperty("http.proxyPort") else System.setProperty("http.proxyPort", previousPort)
         }
     }
 

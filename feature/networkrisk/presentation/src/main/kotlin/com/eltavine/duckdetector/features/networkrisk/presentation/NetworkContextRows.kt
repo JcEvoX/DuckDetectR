@@ -52,6 +52,20 @@ internal fun NetworkSampleWindow.networkRows(): List<NetworkRiskDetailRowModel> 
 internal fun NetworkSampleWindow.proxyRows(): List<NetworkRiskDetailRowModel> = buildList {
     add(row("Default HTTP proxy", stateFor(snapshot.defaultProxy.state),
         "Global proxy takes precedence, then the process-bound network, otherwise the calling UID's network. Configuration is not actual request use. ${snapshot.defaultProxy.value?.describe() ?: snapshot.defaultProxy.failure.describe()}", failure = snapshot.defaultProxy.failure))
+    snapshot.proxySources?.let { sources ->
+        add(row("JVM HTTP proxy", stateFor(sources.jvmHttpProxy.state),
+            "Process-local http.proxyHost/http.proxyPort only; host omitted. Partial or invalid pairs are inconclusive; exclusions, HTTPS/SOCKS and custom ProxySelectors are outside this check. ${sources.jvmHttpProxy.failure.describe()}",
+            value = stateFor(sources.jvmHttpProxy.state).label + (sources.jvmHttpProxy.value?.let { "; port $it" } ?: ""), failure = sources.jvmHttpProxy.failure))
+        val state = stateFor(sources.comparison.toObservationState())
+        add(row("Proxy source cross-check", state,
+            "ConnectivityManager and JVM static HTTP endpoint views; correlated sources, not independent evidence of traffic use. Process overrides and asynchronous updates can differ.",
+            value = if (consistency == SampleConsistency.CHANGED) "Inconclusive" else when (sources.comparison) {
+                ProxySourceComparison.ALIGNED -> "Aligned"
+                ProxySourceComparison.DIFFERENT -> "Inconclusive: views differ"
+                ProxySourceComparison.PAC_NOT_COMPARABLE -> "Not comparable: PAC"
+                ProxySourceComparison.SOURCE_UNAVAILABLE -> "Not comparable: source unavailable"
+            }))
+    }
     snapshot.visibleNetworks.value.orEmpty().forEachIndexed { index, network ->
         val link = network.link.value
         val proxyState = if (link == null) network.link.state else if (link.proxy == null) ObservationState.NOT_OBSERVED else ObservationState.OBSERVED

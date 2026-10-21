@@ -53,7 +53,10 @@ class NetworkRiskCardModelMapperTest {
     }
 
     @Test fun `export strips interface names and network handles without parsing text`() {
-        val model = mapper.map(report())
+        val base = report()
+        val sample = requireNotNull(base.network)
+        val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(
+            proxySources = ProxySourceCheck(NetworkObservation.observed(7890), ProxySourceComparison.ALIGNED)))))
         assertTrue(model.sections.flatMap { it.rows }.any { it.value.contains("private_tun_name") })
         val exported = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Rows>().flatMap { it.rows }
             .joinToString { "${it.label} ${it.value} ${it.detail}" }
@@ -101,6 +104,23 @@ class NetworkRiskCardModelMapperTest {
         assertEquals("Not observed", model.sections.first().rows.first().value)
         assertTrue(model.sections.first().rows.first().detail!!.contains("blocked"))
         assertEquals(DetectionSeverity.INFO, model.status.severity)
+    }
+
+    @Test fun `source differences and network changes are informational and PAC is not compared`() {
+        val base = report()
+        val sample = requireNotNull(base.network)
+        ProxySourceComparison.entries.forEach { comparison ->
+            val sources = ProxySourceCheck(NetworkObservation.observed(7890), comparison)
+            val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(proxySources = sources))))
+            assertEquals(DetectionSeverity.INFO, model.status.severity)
+            val crossCheck = model.sections.flatMap { it.rows }.single { it.label == "Proxy source cross-check" }
+            assertEquals(InfoKind.SUPPORT, crossCheck.status.infoKind)
+            if (comparison == ProxySourceComparison.DIFFERENT) assertEquals("Inconclusive: views differ", crossCheck.value)
+            if (comparison == ProxySourceComparison.PAC_NOT_COMPARABLE) assertEquals("Not comparable: PAC", crossCheck.value)
+            val changed = mapper.map(base.copy(network = sample.copy(consistency = SampleConsistency.CHANGED,
+                snapshot = sample.snapshot.copy(proxySources = sources))))
+            assertEquals("Inconclusive", changed.sections.flatMap { it.rows }.single { it.label == "Proxy source cross-check" }.value)
+        }
     }
 
     private fun report(vpn: Boolean = true, proxy: Boolean = true): NetworkRiskReport {
