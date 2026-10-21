@@ -100,4 +100,71 @@ class AdbRuntimeCardModelMapperTest {
             .rows
         assertTrue(rows.isNotEmpty())
     }
+
+    @Test
+    fun activeSourcesAreWarningsWithoutInventingContradictions() {
+        val model = mapper.map(AdbRuntimeReport(
+            stage = AdbRuntimeStage.READY, probed = true,
+            samples = listOf(AdbRuntimeSample(
+                usbDebuggingEnabled = true, debuggingFeaturesRestricted = false,
+                properties = AdbPropertySnapshot(initAdbdState = "running", sysUsbState = "adb"),
+                usb = UsbRuntimeSnapshot(AdbProbeState.OBSERVED, functions = setOf("adb")),
+            )),
+        ))
+        assertEquals(DetectorStatus.warning(), model.status)
+        assertTrue(model.signalRows.isEmpty())
+        assertEquals(DetectorStatus.warning(), model.scanRows.single { it.label == "USB debugging setting" }.status)
+        assertEquals(DetectorStatus.warning(), model.scanRows.single { it.label == "USB runtime" }.status)
+        assertEquals(4, model.headerFacts.size)
+        assertEquals("Active", model.headerFacts.single { it.label == "ADB" }.value)
+        assertTrue(model.impactRows.single().detail.orEmpty().contains("does not establish root"))
+        assertTrue(model.toDetectorReport().quickFacts.isNotEmpty())
+    }
+
+    @Test
+    fun restrictedAndTestHarnessSettingsRemainContextOnly() {
+        for (sample in listOf(
+            AdbRuntimeSample(usbDebuggingEnabled = true, debuggingFeaturesRestricted = true),
+            AdbRuntimeSample(usbDebuggingEnabled = true, debuggingFeaturesRestricted = false,
+                properties = AdbPropertySnapshot(testHarnessMode = "1")),
+        )) {
+            val model = mapper.map(AdbRuntimeReport(AdbRuntimeStage.READY, platformApiLevel = 33,
+                samples = listOf(sample), probed = true))
+            assertEquals(DetectorStatus.info(InfoKind.SUPPORT), model.scanRows.single { it.label == "USB debugging setting" }.status)
+        }
+    }
+
+    @Test
+    fun failedAndPermissionLimitedSourcesDoNotBecomeCleanRows() {
+        val failed = mapper.map(AdbRuntimeReport.failed("service failed"))
+        assertEquals(DetectorStatus.info(InfoKind.ERROR), failed.scanRows.single().status)
+        assertTrue(failed.methodRows.all { it.status == DetectorStatus.info(InfoKind.ERROR) })
+        assertTrue(failed.headerFacts.all { it.status == DetectorStatus.info(InfoKind.ERROR) })
+        val limited = mapper.map(AdbRuntimeReport(AdbRuntimeStage.READY, samples = emptyList(), probed = false,
+            mdnsSamples = listOf(AdbMdnsSnapshot(AdbProbeState.PERMISSION_REQUIRED))))
+        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), limited.methodRows.single { it.label == "ADB mDNS" }.status)
+        assertTrue(limited.scanRows.any { it.value == "Permission required" })
+    }
+
+    @Test
+    fun resolvedListenerRetainsDiscoveryAndProtocolFailureDetails() {
+        val mdns = AdbMdnsSnapshot(
+            state = AdbProbeState.OBSERVED,
+            serviceKind = AdbMdnsServiceKind.LEGACY_TCP,
+            address = "192.0.2.5", port = 5555,
+            detail = "Resolved local listener",
+            protocol = AdbProtocolSnapshot(AdbProbeState.UNAVAILABLE, detail = "Handshake timed out"),
+        )
+        val model = mapper.map(AdbRuntimeReport(AdbRuntimeStage.READY,
+            samples = emptyList(), mdnsSamples = listOf(mdns), probed = true))
+        val row = model.methodRows.single { it.label == "ADB mDNS" }
+        assertEquals(DetectorStatus.warning(), row.status)
+        assertTrue(row.detail.orEmpty().contains("192.0.2.5:5555"))
+        assertTrue(row.detail.orEmpty().contains("Resolved local listener"))
+        assertTrue(row.detail.orEmpty().contains("Handshake timed out"))
+        assertEquals(DetectorStatus.info(InfoKind.ERROR), model.methodRows.single { it.label == "ADB protocol vs init" }.status)
+        val export = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Rows>()
+            .single { it.title == "Detection methods" }.rows.single { it.label == "ADB mDNS" }
+        assertEquals(row.detail, export.detail)
+    }
 }

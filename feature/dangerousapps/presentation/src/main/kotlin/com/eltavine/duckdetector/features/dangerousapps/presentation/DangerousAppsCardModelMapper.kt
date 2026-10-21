@@ -28,7 +28,7 @@ import com.eltavine.duckdetector.features.dangerousapps.domain.PackageChangeHist
 import com.eltavine.duckdetector.features.dangerousapps.domain.ThanoxIpcState
 import com.eltavine.duckdetector.features.dangerousapps.domain.toDetectorStatus
 import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsCardModel
-import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsContextItemModel
+import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsDetailRowModel
 import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsHeaderFact
 import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsHeaderFactModel
 import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsHiddenPackageItemModel
@@ -51,6 +51,8 @@ class DangerousAppsCardModelMapper {
             hmaAlert = buildHmaAlert(report),
             packageItems = buildPackageItems(report),
             context = buildContext(report),
+            impactRows = dangerousAppsImpactRows(report),
+            methodRows = dangerousAppsMethodRows(report),
             targetApps = report.targets.map { target ->
                 DangerousAppsTargetAppModel(
                     appName = target.appName,
@@ -178,12 +180,14 @@ class DangerousAppsCardModelMapper {
     }
 
     private fun buildHeaderFacts(report: DangerousAppsReport): List<DangerousAppsHeaderFactModel> {
+        if (report.stage != DangerousAppsStage.READY) {
+            return listOf(DangerousAppsHeaderFact.RUNTIME, DangerousAppsHeaderFact.PM,
+                DangerousAppsHeaderFact.HITS, DangerousAppsHeaderFact.HIDDEN).map { fact ->
+                DangerousAppsHeaderFactModel(fact, if (report.stage == DangerousAppsStage.LOADING) "Pending" else "Unavailable", report.toDetectorStatus())
+            }
+        }
         return listOf(
-            DangerousAppsHeaderFactModel(
-                fact = DangerousAppsHeaderFact.TARGETS,
-                value = report.targets.size.toString(),
-                status = DetectorStatus.allClear(),
-            ),
+            dangerousAppsRuntimeFact(report),
             DangerousAppsHeaderFactModel(
                 fact = DangerousAppsHeaderFact.PM,
                 value = visibilityFactValue(report),
@@ -248,7 +252,7 @@ class DangerousAppsCardModelMapper {
         }
     }
 
-    private fun buildContext(report: DangerousAppsReport): List<DangerousAppsContextItemModel> {
+    private fun buildContext(report: DangerousAppsReport): List<DangerousAppsDetailRowModel> {
         val categories = report.findings
             .map { it.target.category.displayName }
             .distinct()
@@ -261,32 +265,39 @@ class DangerousAppsCardModelMapper {
             }
 
         val probeSummary = when {
-            report.probesRan.isEmpty() -> "Pending"
+            report.probesRan.isEmpty() -> "Not reported"
             report.probesRan.size <= 4 -> report.probesRan.joinToString { it.label }
             else -> report.probesRan.take(4)
                 .joinToString { it.label } + " +${report.probesRan.size - 4}"
         }
 
-        return listOf(
-            DangerousAppsContextItemModel("Inventory", "${report.targets.size} legacy packages"),
-            DangerousAppsContextItemModel("PackageManager", visibilityLongLabel(report.packageVisibility)),
-            DangerousAppsContextItemModel(
-                "Visible packages",
-                if (report.packageManagerVisibleCount > 0) {
-                    report.packageManagerVisibleCount.toString()
-                } else {
-                    "Unavailable"
-                },
-            ),
-            DangerousAppsContextItemModel("Categories", categories),
-            DangerousAppsContextItemModel("Probe families", probeSummary),
-            report.thanoxIpc.toContextItem(),
-        ) + report.behaviorChecks.map { check ->
-            DangerousAppsContextItemModel(check.kind.label, buildString {
-                append("${check.state.label}. ${check.detail}")
-                if (check.packages.isNotEmpty()) append(" Packages: ${check.packages.joinToString()}.")
-                if (check.uids.isNotEmpty()) append(" UIDs: ${check.uids.joinToString()}.")
-            })
+        if (report.stage != DangerousAppsStage.READY) {
+            return listOf(DangerousAppsDetailRowModel("Scan", if (report.stage == DangerousAppsStage.LOADING) "Pending" else "Failed",
+                report.toDetectorStatus(), report.issues.firstOrNull()))
+        }
+        val visibilityStatus = when (report.packageVisibility) {
+            DangerousPackageVisibility.FULL -> if (report.suspiciousLowPmInventory) DetectorStatus.warning() else DetectorStatus.allClear()
+            DangerousPackageVisibility.RESTRICTED -> DetectorStatus.info(InfoKind.ERROR)
+            DangerousPackageVisibility.UNKNOWN -> DetectorStatus.info(InfoKind.SUPPORT)
+        }
+        return buildList {
+            add(DangerousAppsDetailRowModel("Inventory", "${report.targets.size} legacy packages"))
+            add(DangerousAppsDetailRowModel("PackageManager", visibilityLongLabel(report.packageVisibility), visibilityStatus))
+            add(DangerousAppsDetailRowModel("Visible packages", if (report.packageManagerVisibleCount > 0) {
+                report.packageManagerVisibleCount.toString()
+            } else "Unavailable", if (report.packageManagerVisibleCount > 0) visibilityStatus else DetectorStatus.info(InfoKind.SUPPORT)))
+            add(DangerousAppsDetailRowModel("Categories", categories,
+                if (report.findings.isNotEmpty()) DetectorStatus.warning() else DetectorStatus.info(InfoKind.SUPPORT)))
+            add(DangerousAppsDetailRowModel("Probe families", probeSummary,
+                detail = report.probesRan.joinToString { it.label }))
+            if (report.suspiciousSharedStorageDenied) {
+                add(DangerousAppsDetailRowModel("Shared storage baseline", "Access denied", DetectorStatus.warning(),
+                    "Fixed baseline paths returned EACCES/EPERM. This is a storage visibility indicator and does not identify an installed package or a hiding implementation."))
+            }
+            if (report.issues.isNotEmpty()) {
+                add(DangerousAppsDetailRowModel("Scan issues", report.issues.size.toString(),
+                    DetectorStatus.info(InfoKind.SUPPORT), report.issues.joinToString("\n")))
+            }
         }
     }
 

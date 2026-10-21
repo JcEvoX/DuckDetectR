@@ -19,6 +19,9 @@ package com.eltavine.duckdetector.features.rootmanagers.presentation
 
 import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import com.eltavine.duckdetector.features.rootmanagers.domain.ProfileScanState
+import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerConfidence
+import com.eltavine.duckdetector.core.evidence.DetectorStatus
+import com.eltavine.duckdetector.core.evidence.InfoKind
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersOutcome
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersReport
 import com.eltavine.duckdetector.features.rootmanagers.domain.outcome
@@ -38,8 +41,22 @@ class RootManagersCardModelMapper {
             verdict = verdict(outcome),
             summary = summary(report, outcome),
             entryRows = report.entries.map(rows::entryRow),
-            profileRows = report.profileScans.map(rows::profileRow),
+            profileRows = report.profileScans.map { scan ->
+                val matched = report.entries.filter { it.profileUserId == scan.profileUserId }
+                val row = rows.profileRow(scan)
+                if (scan.state != ProfileScanState.SEARCHED || matched.isEmpty()) row else row.copy(
+                    value = "${row.value} · ${matched.size} match(es)",
+                    status = when {
+                        matched.any { it.concealed } -> DetectorStatus.danger()
+                        matched.any { it.confidence != RootManagerConfidence.LOW } -> DetectorStatus.warning()
+                        else -> DetectorStatus.info(InfoKind.SUPPORT)
+                    },
+                )
+            },
             scanRows = rows.scanRows(report),
+            headerFacts = rootManagersHeaderFacts(report),
+            impactRows = rootManagersImpactRows(report),
+            methodRows = rootManagersMethodRows(report),
         )
     }
 

@@ -5,6 +5,7 @@ import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import com.eltavine.duckdetector.core.report.ReportBlock
 import com.eltavine.duckdetector.features.dangerousapps.domain.*
+import com.eltavine.duckdetector.features.dangerousapps.presentation.model.DangerousAppsHeaderFact
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -15,6 +16,7 @@ class ThanoxIpcPresentationTest {
         val report = report(ThanoxIpcState.MATCHED)
         val model = mapper.map(report)
         assertEquals(DetectorStatus.warning(), model.status)
+        assertEquals(DetectorStatus.warning(), model.headerFacts.single { it.fact == DangerousAppsHeaderFact.RUNTIME }.status)
         assertEquals("Thanox-compatible runtime service observed", model.verdict)
         assertEquals(0, report.detectedCount)
         assertEquals(0, report.hiddenCount)
@@ -23,7 +25,10 @@ class ThanoxIpcPresentationTest {
         assertNull(model.packageSectionSeverity)
         assertTrue(model.summary.contains("does not establish installation"))
         val blocks = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Verbatim>()
-        assertTrue(blocks.single { it.title == "Context & Inventory" }.lines.any { "Thanox runtime IPC" in it })
+        val methods = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Rows>()
+            .single { it.title == "Detection methods" }.rows
+        assertTrue(methods.single { it.label == "Thanox runtime IPC" }.detail.orEmpty().contains("Fixture reply"))
+        assertEquals(DetectorStatus.warning(), model.methodRows.single { it.label == "Thanox runtime IPC" }.status)
         assertFalse(blocks.any { it.title == "Detected Packages" || it.title.startsWith("HMA Alert") })
     }
 

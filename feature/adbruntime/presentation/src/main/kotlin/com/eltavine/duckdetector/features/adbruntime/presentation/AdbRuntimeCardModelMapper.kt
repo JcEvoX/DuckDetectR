@@ -48,6 +48,9 @@ class AdbRuntimeCardModelMapper {
             summary = summary(report, findings),
             signalRows = findings.map(::findingRow),
             scanRows = scanRows(report),
+            headerFacts = headerFacts(report),
+            impactRows = impactRows(report),
+            methodRows = methodRows(report),
         )
     }
 
@@ -96,22 +99,113 @@ class AdbRuntimeCardModelMapper {
 
     private fun scanRows(report: AdbRuntimeReport): List<AdbRuntimeDetailRowModel> {
         if (report.stage != AdbRuntimeStage.READY) {
-            return emptyList()
+            return listOf(AdbRuntimeDetailRowModel("Scan", if (report.stage == AdbRuntimeStage.LOADING) "Pending" else "Failed",
+                report.toDetectorStatus(), report.errorMessage))
         }
         val sample = report.samples.lastOrNull() ?: return listOf(
             infoRow("Probe", "Unavailable", report.unavailableReason),
+            mdnsRow(report.latestMdns),
         )
         return listOf(
             infoRow("Platform API", report.platformApiLevel?.toString() ?: "Unavailable"),
             infoRow("Debugging restricted", sample.debuggingFeaturesRestricted.enabledLabel()),
             infoRow("Test harness mode", sample.properties.testHarnessMode ?: "Unavailable"),
-            infoRow("USB debugging setting", sample.usbDebuggingEnabled.enabledLabel()),
-            infoRow("Wireless debugging setting", sample.wirelessDebuggingEnabled.enabledLabel()),
-            infoRow("init.svc.adbd", sample.properties.initAdbdState ?: "Unavailable"),
+            settingRow("USB debugging setting", sample.usbDebuggingEnabled, report, usbSetting = true),
+            settingRow("Wireless debugging setting", sample.wirelessDebuggingEnabled, report),
+            infoRow("init.svc.adbd", sample.properties.initAdbdState ?: "Unavailable").copy(
+                status = when (sample.properties.initAdbdState?.lowercase()) {
+                    "running" -> DetectorStatus.warning()
+                    "stopped" -> DetectorStatus.allClear()
+                    else -> DetectorStatus.info(InfoKind.SUPPORT)
+                },
+            ),
             usbRuntimeRow(sample),
             mdnsRow(report.latestMdns),
-            infoRow("sys.usb.state", sample.properties.sysUsbState ?: "Unavailable"),
+            infoRow("sys.usb.state", sample.properties.sysUsbState ?: "Unavailable").copy(
+                status = observationStatus(sample.properties.sysUsbState?.split(',')?.any { it.trim().equals("adb", ignoreCase = true) }),
+            ),
         )
+    }
+
+    private fun headerFacts(report: AdbRuntimeReport): List<AdbRuntimeDetailRowModel> {
+        if (report.stage != AdbRuntimeStage.READY) {
+            val value = if (report.stage == AdbRuntimeStage.LOADING) "Pending" else "Unavailable"
+            return listOf("ADB", "Contradictions", "USB", "Network").map {
+                AdbRuntimeDetailRowModel(it, value, report.toDetectorStatus())
+            }
+        }
+        val pending = "Unavailable"
+        val status = report.toDetectorStatus()
+        val sample = report.samples.lastOrNull()
+        return listOf(
+            AdbRuntimeDetailRowModel("ADB", if (report.stage == AdbRuntimeStage.READY && report.probed) {
+                if (report.isAdbActive()) "Active" else "Not observed"
+            } else pending, status),
+            AdbRuntimeDetailRowModel("Contradictions", if (report.stage == AdbRuntimeStage.READY && report.probed) {
+                report.findings().size.toString()
+            } else pending, if (report.findings().isNotEmpty()) DetectorStatus.danger() else DetectorStatus.info(InfoKind.SUPPORT)),
+            sample?.let(::usbRuntimeRow)?.copy(label = "USB") ?: infoRow("USB", pending),
+            if (report.stage == AdbRuntimeStage.READY) mdnsRow(report.latestMdns).copy(label = "Network") else infoRow("Network", pending),
+        )
+    }
+
+    private fun impactRows(report: AdbRuntimeReport): List<AdbRuntimeDetailRowModel> = listOf(
+        AdbRuntimeDetailRowModel("Interpretation", verdict(report, report.findings()), report.toDetectorStatus(),
+            when {
+                report.stage != AdbRuntimeStage.READY -> "No completed runtime conclusion is available."
+                report.findings().isNotEmpty() -> "A stable, protocol-confirmed ADB endpoint disagrees with the observed adbd lifecycle. This does not identify a root or hiding implementation."
+                report.isAdbActive() -> "Debugging settings or runtime activity were observed. ADB can be enabled on an ordinary device and does not establish root access."
+                else -> "Only available sources were evaluated. Permission restrictions, discovery failures and lifecycle transitions limit negative observations."
+            }),
+    )
+
+    private fun methodRows(report: AdbRuntimeReport): List<AdbRuntimeDetailRowModel> {
+        if (report.stage != AdbRuntimeStage.READY) {
+            val status = report.toDetectorStatus()
+            return listOf("Settings and policy", "USB runtime", "ADB mDNS", "ADB protocol vs init").map {
+                AdbRuntimeDetailRowModel(it, if (report.stage == AdbRuntimeStage.LOADING) "Pending" else "Unavailable", status)
+            }
+        }
+        val sample = report.samples.lastOrNull()
+        val protocol = report.latestMdns.protocol
+        return listOf(
+            infoRow("Settings and policy", if (sample == null) "Unavailable" else "Context collected",
+                "Debugging restrictions and Test Harness Mode qualify settings; settings and USB gadget state are not hard contradictions against init."),
+            sample?.let(::usbRuntimeRow) ?: infoRow("USB runtime", "Unavailable"),
+            mdnsRow(report.latestMdns),
+            AdbRuntimeDetailRowModel("ADB protocol vs init", when {
+                report.findings().isNotEmpty() -> "Persistent contradiction"
+                protocol.confirmed -> "No contradiction established"
+                else -> "Not established"
+            }, when {
+                report.findings().isNotEmpty() -> DetectorStatus.danger()
+                protocol.state == AdbProbeState.UNAVAILABLE -> DetectorStatus.info(InfoKind.ERROR)
+                else -> DetectorStatus.info(InfoKind.SUPPORT)
+            },
+                "${report.samples.size} lifecycle sample(s), ${report.mdnsSamples.size} discovery pass(es); latest protocol=${protocol.label()}. A contradiction requires the same confirmed listener in repeated passes while init reports stopped."),
+        )
+    }
+
+    private fun settingRow(label: String, enabled: Boolean?, report: AdbRuntimeReport, usbSetting: Boolean = false): AdbRuntimeDetailRowModel {
+        val sample = report.samples.lastOrNull()
+        val qualified = sample?.debuggingFeaturesRestricted == false &&
+            !(usbSetting && (report.platformApiLevel ?: 0) >= 33 && sample.properties.testHarnessMode == "1")
+        return infoRow(label, enabled.enabledLabel()).copy(
+            status = if (qualified) observationStatus(enabled) else DetectorStatus.info(InfoKind.SUPPORT),
+            detail = if (qualified) null else "Settings are context only while policy or Test Harness Mode prevents an ordinary activity interpretation.",
+        )
+    }
+
+    private fun observationStatus(active: Boolean?): DetectorStatus = when (active) {
+        true -> DetectorStatus.warning()
+        false -> DetectorStatus.allClear()
+        null -> DetectorStatus.info(InfoKind.SUPPORT)
+    }
+
+    private fun probeStatus(state: AdbProbeState, active: Boolean): DetectorStatus = when (state) {
+        AdbProbeState.OBSERVED, AdbProbeState.NOT_OBSERVED -> observationStatus(active)
+        AdbProbeState.UNAVAILABLE -> DetectorStatus.info(InfoKind.ERROR)
+        AdbProbeState.PERMISSION_REQUIRED, AdbProbeState.NOT_PROBED -> DetectorStatus.info(InfoKind.SUPPORT)
     }
 
     private fun usbRuntimeRow(sample: AdbRuntimeSample): AdbRuntimeDetailRowModel {
@@ -128,7 +222,7 @@ class AdbRuntimeCardModelMapper {
             value = value,
             detail = "connected=${usb.connected ?: "?"}, configured=${usb.configured ?: "?"}" +
                 usb.detail?.let { ", $it" }.orEmpty(),
-        )
+        ).copy(status = probeStatus(usb.state, usb.adbFunctionEnabled))
     }
 
     private fun mdnsRow(mdns: AdbMdnsSnapshot): AdbRuntimeDetailRowModel {
@@ -143,16 +237,24 @@ class AdbRuntimeCardModelMapper {
             AdbProbeState.NOT_PROBED -> "Not probed"
             AdbProbeState.UNAVAILABLE -> "Unavailable"
         }
-        val detail = when {
-            mdns.address != null && mdns.port != null ->
-                "${mdns.address}:${mdns.port}; protocol=${mdns.protocol.label()}"
-            mdns.state == AdbProbeState.PERMISSION_REQUIRED ->
-                "Android 17 allows silent NsdManager discovery only with the local network permission. " +
+        val detail = buildList {
+            if (mdns.address != null && mdns.port != null) {
+                add("${mdns.address}:${mdns.port}; protocol=${mdns.protocol.label()}")
+            }
+            if (mdns.state == AdbProbeState.PERMISSION_REQUIRED) {
+                add("Android 17 allows silent NsdManager discovery only with the local network permission. " +
                     "Duck Detector never asks for it during a scan; grant it in the app's system settings " +
-                    "to evaluate network ADB."
-            else -> mdns.detail
+                    "to evaluate network ADB.")
+            }
+            mdns.detail?.takeIf { it.isNotBlank() }?.let(::add)
+            mdns.protocol.detail?.takeIf { it.isNotBlank() }?.let { add("Protocol: $it") }
+        }.distinct().joinToString("\n").ifBlank { null }
+        val status = if (mdns.state == AdbProbeState.OBSERVED && !mdns.localServiceObserved) {
+            DetectorStatus.info(InfoKind.SUPPORT)
+        } else {
+            probeStatus(mdns.state, mdns.localServiceObserved)
         }
-        return infoRow("ADB mDNS", value, detail)
+        return infoRow("ADB mDNS", value, detail).copy(status = status)
     }
 
     private fun infoRow(label: String, value: String, detail: String? = null) =
