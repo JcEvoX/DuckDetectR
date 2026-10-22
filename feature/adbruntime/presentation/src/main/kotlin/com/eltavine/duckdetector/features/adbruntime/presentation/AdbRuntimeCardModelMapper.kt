@@ -113,16 +113,12 @@ class AdbRuntimeCardModelMapper {
             settingRow("USB debugging setting", sample.usbDebuggingEnabled, report, usbSetting = true),
             settingRow("Wireless debugging setting", sample.wirelessDebuggingEnabled, report),
             infoRow("init.svc.adbd", sample.properties.initAdbdState ?: "Unavailable").copy(
-                status = when (sample.properties.initAdbdState?.lowercase()) {
-                    "running" -> DetectorStatus.warning()
-                    "stopped" -> DetectorStatus.allClear()
-                    else -> DetectorStatus.info(InfoKind.SUPPORT)
-                },
+                status = observationStatus(sample.properties.initAdbdRunning),
             ),
             usbRuntimeRow(sample),
             mdnsRow(report.latestMdns),
             infoRow("sys.usb.state", sample.properties.sysUsbState ?: "Unavailable").copy(
-                status = observationStatus(sample.properties.sysUsbState?.split(',')?.any { it.trim().equals("adb", ignoreCase = true) }),
+                status = observationStatus(sample.properties.sysUsbAdbEnabled),
             ),
         )
     }
@@ -189,7 +185,7 @@ class AdbRuntimeCardModelMapper {
     private fun settingRow(label: String, enabled: Boolean?, report: AdbRuntimeReport, usbSetting: Boolean = false): AdbRuntimeDetailRowModel {
         val sample = report.samples.lastOrNull()
         val qualified = sample?.debuggingFeaturesRestricted == false &&
-            !(usbSetting && (report.platformApiLevel ?: 0) >= 33 && sample.properties.testHarnessMode == "1")
+            !(usbSetting && (report.platformApiLevel ?: 0) >= 33 && sample.properties.testHarnessEnabled)
         return infoRow(label, enabled.enabledLabel()).copy(
             status = if (qualified) observationStatus(enabled) else DetectorStatus.info(InfoKind.SUPPORT),
             detail = if (qualified) null else "Settings are context only while policy or Test Harness Mode prevents an ordinary activity interpretation.",

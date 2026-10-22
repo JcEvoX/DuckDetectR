@@ -18,6 +18,7 @@
 #include "zygisk/probes/fd_probe.h"
 
 #include <array>
+#include <cstdio>
 #include <dirent.h>
 #include <sstream>
 #include <unistd.h>
@@ -81,8 +82,12 @@ namespace duckdetector::zygisk {
                 continue;
             }
 
-            char proc_path[96] = {};
-            std::snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%s", entry->d_name);
+            char proc_path[sizeof("/proc/self/fd/") + sizeof(entry->d_name)] = {};
+            const auto path_length = std::snprintf(proc_path, sizeof(proc_path),
+                                                   "/proc/self/fd/%s", entry->d_name);
+            if (path_length < 0 || static_cast<size_t>(path_length) >= sizeof(proc_path)) {
+                continue;
+            }
             std::array<char, 512> target{};
             const auto length = readlink(proc_path, target.data(), target.size() - 1);
             if (length <= 0) {

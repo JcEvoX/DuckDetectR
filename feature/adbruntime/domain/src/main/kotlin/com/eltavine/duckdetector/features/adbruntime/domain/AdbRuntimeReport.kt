@@ -43,7 +43,18 @@ data class AdbPropertySnapshot(
     val testHarnessMode: String? = null,
     val initAdbdState: String? = null,
     val sysUsbState: String? = null,
-)
+) {
+    /** Typed projections preserve the raw property encodings; presentation does not parse them. */
+    val initAdbdRunning: Boolean?
+        get() = when (initAdbdState?.lowercase()) {
+            "running" -> true
+            "stopped" -> false
+            else -> null
+        }
+    val sysUsbAdbEnabled: Boolean?
+        get() = sysUsbState?.split(',')?.any { it.trim().equals("adb", ignoreCase = true) }
+    val testHarnessEnabled: Boolean get() = testHarnessMode == "1"
+}
 
 data class UsbRuntimeSnapshot(
     val state: AdbProbeState,
