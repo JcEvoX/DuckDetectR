@@ -81,10 +81,9 @@ namespace duckdetector::zygisk {
                 continue;
             }
 
-            char proc_path[96] = {};
-            std::snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%s", entry->d_name);
+            const std::string proc_path = std::string("/proc/self/fd/") + entry->d_name;
             std::array<char, 512> target{};
-            const auto length = readlink(proc_path, target.data(), target.size() - 1);
+            const auto length = readlink(proc_path.c_str(), target.data(), target.size() - 1);
             if (length <= 0) {
                 continue;
             }
