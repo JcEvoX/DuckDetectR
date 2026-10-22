@@ -66,7 +66,7 @@ Dangerous Apps 还根据 frknkrc44 提供的报告，检查广播与包查询的
 
 Android 15/16 还会以信息级展示实验性的非即时应用 UID 权限与包关联一致性检查，无需目标进程正在运行，也不据此识别隐藏模块；UID 包关联复核绕过 Java 客户端缓存。
 
-其中，`Play Integrity Fix` 检测的是与完整性伪装修改相关的本地迹象，并不会返回 Google Play Integrity API 的官方判定。TEE 模块检查 Android KeyStore 与设备证明证据，包括证书链、安全级别、吊销数据，以及设备支持时的部分 KeyMint、StrongBox 和 Soter 行为。
+其中，`Play Integrity Fix` 检测的是与完整性伪装修改相关的本地迹象，并不会返回 Google Play Integrity API 的官方判定。TEE 模块检查 Android KeyStore 与设备证明证据，包括证书链、安全级别、吊销数据，以及设备支持时的部分 KeyMint、StrongBox 和 Soter 行为。RKP 构建元数据仅作为证书诊断信息展示，其中的 approval 值不能用于判定 CTS 状态，RKP V3 也同样如此。
 
 SELinux 检测还保留了 app-zygote 阶段的 SID 表查询与注册对照实验。重复差异只作为辅助警告；同步注册的策略隐藏可能不留下差异。特权上下文写入在一次性子进程中执行，并加入畸形与合法载荷控制；上下文识别和普通 app 计时只作为辅助警告，app-zygote AVC 查找计数画像仅作信息展示，阴性观察不能排除隐藏策略。访问失败和不完整实验分别显示覆盖状态。源码依据与真机验证缺口见 [SELinux 证据记录](./feature/selinux/EVIDENCE.md)。
 
