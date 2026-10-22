@@ -125,7 +125,10 @@ refer to earlier experimental builds, not the current interpretation.
 The preflight limits obvious fault/permission failures to a disposable child; it
 does not prove that an arbitrary modified handler will behave identically in the
 live parent. Parent writes are synchronous and have no interruptible syscall
-deadline. No new physical-device measurements accompany the current consistency
+deadline. The host acquisition and bootstrap tests target the standard unminified debug APK.
+A minified release instrumentation target needs its own reviewed test/keep-rule
+setup; copying duplicate runtime JARs into every test classpath is not used.
+No new physical-device measurements accompany the current consistency
 and evidence-retention changes; host/JVM tests validate their control flow only.
 
 #### CPU crossover counterexample (2026-10-20)

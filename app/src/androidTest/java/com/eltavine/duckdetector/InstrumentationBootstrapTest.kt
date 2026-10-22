@@ -10,7 +10,7 @@ import org.junit.runner.RunWith
 /** Does not reference target-app classes that R8 can rename or remove. */
 @RunWith(AndroidJUnit4::class)
 class InstrumentationBootstrapTest {
-    @Test fun testRuntimeIsIndependentOfTargetApk() {
+    @Test fun testRuntimeLinksRequiredLibraries() {
         assertEquals(
             "com.eltavine.duckdetector",
             InstrumentationRegistry.getInstrumentation().targetContext.packageName,
