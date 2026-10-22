@@ -22,16 +22,31 @@ import com.eltavine.duckdetector.core.evidence.InfoKind
 
 /** VPNs, proxy configuration and installed software are context, with no adverse verdict. */
 fun ObservationState.toDetectorStatus(failure: ProbeFailure? = null): DetectorStatus = DetectorStatus.info(
-    when (failure) {
-        ProbeFailure.PLATFORM_FAILURE, ProbeFailure.READ_LIMIT, ProbeFailure.INVALID_METADATA,
-        ProbeFailure.DISAPPEARED -> InfoKind.ERROR
-        else -> InfoKind.SUPPORT
-    },
+    if (failure.isProbeError()) InfoKind.ERROR else InfoKind.SUPPORT,
 )
 
 fun NetworkRiskReport.toDetectorStatus(): DetectorStatus = when {
     stage == NetworkRiskStage.FAILED -> DetectorStatus.info(InfoKind.ERROR)
+    stage == NetworkRiskStage.READY && hasProbeErrors() -> DetectorStatus.info(InfoKind.ERROR)
     else -> DetectorStatus.info(InfoKind.SUPPORT)
+}
+
+/** Collectors retain failures as values, so READY describes completion, not successful coverage. */
+fun NetworkRiskReport.hasProbeErrors(): Boolean =
+    network?.snapshot?.hasProbeErrors() == true || clients?.state == ObservationState.UNAVAILABLE ||
+        clients?.clients.orEmpty().any { it.signingFailure.isProbeError() } ||
+        modules.any { it.metadata.failure.isProbeError() }
+
+private fun NetworkSnapshot.hasProbeErrors(): Boolean =
+    listOf(defaultNetwork, boundNetwork, defaultProxy, visibleNetworks).any { it.failure.isProbeError() } ||
+        proxySources?.jvmHttpProxy?.failure.isProbeError() || visibleNetworks.value.orEmpty().any {
+            it.transports.failure.isProbeError() || it.link.failure.isProbeError()
+        }
+
+private fun ProbeFailure?.isProbeError(): Boolean = when (this) {
+    ProbeFailure.PLATFORM_FAILURE, ProbeFailure.READ_LIMIT, ProbeFailure.INVALID_METADATA,
+    ProbeFailure.DISAPPEARED -> true
+    ProbeFailure.ACCESS_DENIED, ProbeFailure.NOT_EVALUATED, null -> false
 }
 
 /** A changing sample cannot support correlations, including an assertion of absence. */

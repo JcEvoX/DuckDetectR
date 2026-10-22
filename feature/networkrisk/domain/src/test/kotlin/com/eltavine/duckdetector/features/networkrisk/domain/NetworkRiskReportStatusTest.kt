@@ -17,6 +17,7 @@
 
 package com.eltavine.duckdetector.features.networkrisk.domain
 
+import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import org.junit.Assert.*
@@ -50,6 +51,53 @@ class NetworkRiskReportStatusTest {
         assertEquals(ClientIdentity.IDENTITY_UNVERIFIED, definition.verifyCurrentSigners(emptySet()))
         assertEquals(ClientIdentity.IDENTITY_UNVERIFIED, definition.copy(releaseCertificateSha256 = null).verifyCurrentSigners(setOf(pin)))
         assertEquals(NetworkClientCatalog.entries.size, NetworkClientCatalog.entries.map { it.packageName }.distinct().size)
+    }
+
+    @Test fun `query failures survive ready stage in the SDK status`() {
+        val failed = NetworkRiskReport(NetworkRiskStage.READY, network = window(SampleConsistency.REPEATED).copy(
+            snapshot = NetworkSnapshot(
+                NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE),
+                NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE),
+                NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE),
+                NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE),
+            ),
+        ))
+        assertEquals(InfoKind.ERROR, failed.toDetectorStatus().infoKind)
+    }
+
+    @Test fun `nested network JVM signing and deployment errors reach the headline`() {
+        val base = NetworkRiskReport(NetworkRiskStage.READY, network = window(SampleConsistency.REPEATED))
+        val sample = requireNotNull(base.network)
+        val network = VisibleNetwork(1, NetworkObservation.observed(setOf(NetworkTransport.WIFI)),
+            NetworkObservation.unavailable(ProbeFailure.DISAPPEARED))
+        val failedTransports = network.copy(
+            transports = NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE), link = NetworkObservation.absent())
+        fun withNetwork(value: VisibleNetwork) = base.copy(network = sample.copy(snapshot =
+            sample.snapshot.copy(visibleNetworks = NetworkObservation.observed(listOf(value)))))
+        val cases = listOf(
+            withNetwork(network),
+            withNetwork(failedTransports),
+            base.copy(network = sample.copy(snapshot = sample.snapshot.copy(proxySources = ProxySourceCheck(
+                NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE), ProxySourceComparison.SOURCE_UNAVAILABLE)))),
+            base.copy(clients = NetworkClientInventory(InstalledPackageVisibility.UNKNOWN, ObservationState.UNAVAILABLE, emptyList())),
+            base.copy(clients = NetworkClientInventory(InstalledPackageVisibility.RESTRICTED, ObservationState.OBSERVED,
+                listOf(NetworkClientEvidence("test.client", "Test", ObservationState.OBSERVED, signingFailure = ProbeFailure.PLATFORM_FAILURE)))),
+            base.copy(modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK,
+                NetworkObservation(ObservationState.INCONCLUSIVE, failure = ProbeFailure.INVALID_METADATA)))),
+        )
+        cases.forEach { assertEquals(InfoKind.ERROR, it.toDetectorStatus().infoKind) }
+    }
+
+    @Test fun `coverage loss and changing samples are not execution errors`() {
+        val limited = NetworkObservation<Long>(ObservationState.PERMISSION_LIMITED, failure = ProbeFailure.ACCESS_DENIED)
+        val sample = window(SampleConsistency.CHANGED)
+        val report = NetworkRiskReport(NetworkRiskStage.READY,
+            network = sample.copy(snapshot = sample.snapshot.copy(defaultNetwork = limited,
+                proxySources = ProxySourceCheck(NetworkObservation(ObservationState.INCONCLUSIVE), ProxySourceComparison.SOURCE_UNAVAILABLE))),
+            modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK,
+                NetworkObservation(ObservationState.PERMISSION_LIMITED, failure = ProbeFailure.ACCESS_DENIED))))
+        assertEquals(InfoKind.SUPPORT, report.toDetectorStatus().infoKind)
+        assertEquals(InfoKind.SUPPORT, NetworkRiskReport.loading().toDetectorStatus().infoKind)
     }
 
     private fun window(consistency: SampleConsistency) = NetworkSampleWindow(

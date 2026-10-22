@@ -24,6 +24,7 @@ class NetworkRiskCardModelMapper {
     fun map(report: NetworkRiskReport): NetworkRiskCardModel {
         val window = report.network
         val hits = report.clients?.clients.orEmpty().count { it.state == ObservationState.OBSERVED }
+        val probeErrors = report.stage == NetworkRiskStage.READY && report.hasProbeErrors()
         return NetworkRiskCardModel(
             title = "Network Risk",
             subtitle = "Network context, proxy configuration and client evidence",
@@ -31,13 +32,15 @@ class NetworkRiskCardModelMapper {
             verdict = when {
                 report.stage == NetworkRiskStage.LOADING -> "Scanning"
                 report.stage == NetworkRiskStage.FAILED -> "Scan failed"
+                probeErrors -> "Network context incomplete"
                 window?.consistency == SampleConsistency.CHANGED -> "Network changed during scan"
                 else -> "Network context collected"
             },
             summary = when (report.stage) {
                 NetworkRiskStage.LOADING -> "Collecting caller-visible evidence."
                 NetworkRiskStage.FAILED -> report.errorMessage ?: "Collection failed."
-                NetworkRiskStage.READY -> "VPNs, proxy settings and installed clients are informational. Service activity and request routing remain unevaluated."
+                NetworkRiskStage.READY -> (if (probeErrors) "Some probes failed; available observations are retained. " else "") +
+                    "VPNs, proxy settings and installed clients are informational. Service activity and request routing remain unevaluated."
             },
             headerFacts = listOf(
                 row("VPN transport", if (window == null) ObservationState.UNAVAILABLE else window.stateFor(vpnState(window)), "Visible networks only."),

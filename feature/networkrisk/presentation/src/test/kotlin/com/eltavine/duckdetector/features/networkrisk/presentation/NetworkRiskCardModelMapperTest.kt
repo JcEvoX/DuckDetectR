@@ -123,6 +123,19 @@ class NetworkRiskCardModelMapperTest {
         }
     }
 
+    @Test fun `probe errors produce an incomplete headline and retain exported failure detail`() {
+        val base = report()
+        val sample = requireNotNull(base.network)
+        val failed = NetworkObservation<Long>(ObservationState.UNAVAILABLE, failure = ProbeFailure.PLATFORM_FAILURE)
+        val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(defaultNetwork = failed))))
+        assertEquals(InfoKind.ERROR, model.status.infoKind)
+        assertEquals("Network context incomplete", model.verdict)
+        assertTrue(model.summary.contains("Some probes failed"))
+        assertEquals(model.verdict, model.toDetectorReport().verdict)
+        val rows = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Rows>().flatMap { it.rows }
+        assertTrue(rows.any { it.value == "Unavailable" && it.detail.orEmpty().contains("Platform query or read failed") })
+    }
+
     private fun report(vpn: Boolean = true, proxy: Boolean = true): NetworkRiskReport {
         val link = LinkContext("private_tun_name", listOf(VisibleRoute(AddressFamily.IPV6, 0, true, false)),
             if (proxy) ProxyConfiguration(ProxyKind.PAC, -1, 0) else null, true, true, 1)
