@@ -41,6 +41,7 @@ enum class SelinuxAvcLookupCollection(val label: String) {
 enum class SelinuxAppZygoteTimingVerdict(val label: String) {
     POSITIVE("Positive A−B timing asymmetry"),
     NEGATIVE("Negative A−B timing asymmetry"),
+    BASELINE("Zero A−B timing baseline"),
     INCONCLUSIVE("Timing direction inconclusive"),
     UNAVAILABLE("Timing unavailable"),
 }
@@ -116,14 +117,12 @@ data class SelinuxAvcLookupReading(
                 sample.positiveBlocks !in 0..16 || sample.negativeBlocks !in 0..16 || sample.zeroBlocks !in 0..16 ||
                 sample.positiveBlocks + sample.negativeBlocks + sample.zeroBlocks != 16)
                 return SelinuxAppZygoteTimingVerdict.INCONCLUSIVE
-            // A sign without agreement across blocks is unstable. Even agreement
-            // cannot attribute costs to hiding: stock A and B take different paths.
+            // Classification follows the standalone paired-median PoC. Block
+            // counts and A-slower counts are diagnostics, not extra thresholds.
             return when {
-                sample.medianDeltaNs > 0 && sample.positiveBlocks >= 12 && sample.aSlower > sample.pairs / 2 ->
-                    SelinuxAppZygoteTimingVerdict.POSITIVE
-                sample.medianDeltaNs < 0 && sample.negativeBlocks >= 12 && sample.aSlower <= sample.pairs / 2 ->
-                    SelinuxAppZygoteTimingVerdict.NEGATIVE
-                else -> SelinuxAppZygoteTimingVerdict.INCONCLUSIVE
+                sample.medianDeltaNs > 0 -> SelinuxAppZygoteTimingVerdict.POSITIVE
+                sample.medianDeltaNs < 0 -> SelinuxAppZygoteTimingVerdict.NEGATIVE
+                else -> SelinuxAppZygoteTimingVerdict.BASELINE
             }
         }
     /** Only collected counts determine the lookup profile. */

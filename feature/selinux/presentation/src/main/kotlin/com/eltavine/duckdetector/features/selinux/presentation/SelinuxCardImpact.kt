@@ -229,11 +229,11 @@ internal fun buildImpactItems(report: SelinuxReport): List<SelinuxImpactItemMode
     if (report.methods.any { it.oracle == SelinuxOracle.APP_ZYGOTE_ATTR_TIMING &&
             it.avcLookup?.timingVerdict == SelinuxAppZygoteTimingVerdict.POSITIVE }) {
         items += SelinuxImpactItemModel(
-            "The App Zygote invalid-context A−B median was positive with consistent 32-pair blocks. " +
+            "The App Zygote invalid-context A−B paired median was positive. " +
                 "Stock kernels also take different paths for A and B, and CPU/load can change the sign. " +
-                "This is supporting timing information, not proof of KernelSU or root. " +
+                "This is a strong timing anomaly, not proof of KernelSU or root. " +
                 "The AVC counts share the same measurement carrier.",
-            DetectorStatus.info(InfoKind.SUPPORT),
+            DetectorStatus.danger(),
         )
     }
     if (avcLookupReading(report)?.extraLookupObserved == true) {

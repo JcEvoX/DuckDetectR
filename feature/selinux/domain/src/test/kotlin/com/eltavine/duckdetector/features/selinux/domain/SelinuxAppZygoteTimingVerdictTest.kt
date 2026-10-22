@@ -31,16 +31,19 @@ class SelinuxAppZygoteTimingVerdictTest {
     @Test fun `zero is the exclusive sign boundary`() {
         assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(1, 13, 3, 300).timingVerdict)
         assertEquals(SelinuxAppZygoteTimingVerdict.NEGATIVE, reading(-1, 3, 13, 180).timingVerdict)
-        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(0, 16, 0, 420).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.BASELINE, reading(0, 16, 0, 420).timingVerdict)
     }
 
-    @Test fun `inconsistent blocks or pair counts do not establish a direction`() {
-        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(157, 11, 5, 420).timingVerdict)
-        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(157, 14, 2, 210).timingVerdict)
-        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(157, 12, 4, 257).timingVerdict)
-        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(157, 12, 4, 256).timingVerdict)
+    @Test fun `positive paired medians cannot be suppressed by diagnostic blocks`() {
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(53, 9, 2, 310).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(52, 10, 0, 317).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(157, 11, 5, 420).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(1, 10, 5, 271).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(53, 7, 0, 210).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(157, 12, 4, 256).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.BASELINE, reading(0, 6, 9, 240).timingVerdict)
         assertEquals(SelinuxAppZygoteTimingVerdict.NEGATIVE, reading(-157, 2, 14, 100).timingVerdict)
-        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(-157, 5, 11, 100).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.NEGATIVE, reading(-157, 5, 11, 100).timingVerdict)
     }
 
     @Test fun `legacy pairs and any migration are never positive`() {

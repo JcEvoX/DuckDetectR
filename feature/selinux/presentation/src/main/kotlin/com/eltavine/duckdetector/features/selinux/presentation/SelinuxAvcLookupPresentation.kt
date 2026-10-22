@@ -20,6 +20,7 @@ package com.eltavine.duckdetector.features.selinux.presentation
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupCollection
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupProfile
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupReading
+import com.eltavine.duckdetector.features.selinux.domain.SelinuxAppZygoteTimingVerdict
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxCheckResult
 import com.eltavine.duckdetector.features.selinux.presentation.model.SelinuxDetailRowModel
 import java.util.Locale
@@ -43,12 +44,13 @@ internal fun appZygoteTimingRow(result: SelinuxCheckResult): SelinuxDetailRowMod
     return SelinuxDetailRowModel(
         label = result.method,
         value = verdict.label,
-        status = DetectorStatus.info(InfoKind.SUPPORT),
+        status = if (verdict == SelinuxAppZygoteTimingVerdict.POSITIVE) DetectorStatus.danger()
+            else DetectorStatus.info(InfoKind.SUPPORT),
         detail = (missingEvidence?.let { "Collection failed: $it (AVC child).\n" } ?: "") +
             (if (!parent.attempted) "No parent timing sample was collected; this is not a negative detection.\n" else "") +
             "A=invalid type, B=same-length newline prefix; both must return EINVAL. " +
-            "512 AB/BA pairs, 32 warmups; CLOCK_MONOTONIC_RAW; direction requires a nonzero paired median " +
-            "and at least 12/16 agreeing blocks; positive timing also requires a majority of A-slower pairs. " +
+            "512 AB/BA pairs, 32 warmups; CLOCK_MONOTONIC_RAW; paired A−B > 0 ns is positive, " +
+            "0 ns is baseline, and < 0 ns is negative. Block counts are diagnostic only. " +
             "Measured in the preload parent without changing CPU affinity. " +
             "A change from the entry CPU at any sampled endpoint or an incomplete sample invalidates classification. " +
             "One retained preload is one measurement.\n" +

@@ -8,14 +8,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SelinuxAppZygoteTimingPresentationTest {
-    @Test fun `positive timing is informational without raising the card`() {
+    @Test fun `positive timing raises Danger in row and card`() {
         val model = SelinuxCardModelMapper().map(report(timingResult(157, 14, 2, 400)))
-        assertEquals(DetectorStatus.allClear(), model.status)
-        assertTrue(!model.verdict.contains("App Zygote"))
-        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), model.methodRows.single().status)
+        assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals(DetectorStatus.danger(), model.methodRows.single().status)
         assertTrue(model.methodRows.single().detail.orEmpty().contains("not proof"))
-        assertTrue(model.impactItems.any { it.status == DetectorStatus.info(InfoKind.SUPPORT) &&
+        assertTrue(model.impactItems.any { it.status == DetectorStatus.danger() &&
             it.text.contains("App Zygote invalid-context") })
+    }
+
+    @Test fun `positive median raises Danger regardless of diagnostic block counts`() {
+        val model = SelinuxCardModelMapper().map(report(timingResult(53, 9, 2, 310)))
+        assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals(DetectorStatus.danger(), model.methodRows.single().status)
+        assertTrue(model.methodRows.single().detail.orEmpty().contains("A−B=53 ns"))
+        assertTrue(model.methodRows.single().detail.orEmpty().contains("9/2/5"))
+        assertEquals(DetectorStatus.danger(),
+            SelinuxCardModelMapper().map(report(timingResult(1, 10, 5, 271))).methodRows.single().status)
+        assertEquals(DetectorStatus.danger(),
+            SelinuxCardModelMapper().map(report(timingResult(1, 10, 5, 271))).status)
     }
 
     @Test fun `negative parent and incomplete measurements never raise danger`() {
@@ -25,8 +36,9 @@ class SelinuxAppZygoteTimingPresentationTest {
             assertEquals(DetectorStatus.allClear(), model.status)
             assertTrue(model.impactItems.none { it.text.contains("App Zygote invalid-context") })
         }
-        assertEquals(DetectorStatus.allClear(),
-            SelinuxCardModelMapper().map(report(timingResult(1, 11, 5, 400))).status)
+        val baseline = SelinuxCardModelMapper().map(report(timingResult(0, 11, 5, 400)))
+        assertEquals(DetectorStatus.allClear(), baseline.status)
+        assertEquals(SelinuxAppZygoteTimingVerdict.BASELINE.label, baseline.methodRows.single().value)
         val positiveChild = timingResult(364, 15, 1, 397)
         val negativeParent = requireNotNull(positiveChild.avcLookup).let { reading ->
             withReading(positiveChild, reading.copy(parentTiming = reading.parentTiming.copy(

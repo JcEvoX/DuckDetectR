@@ -34,7 +34,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SelinuxAvcLookupMethodTest {
-    @Test fun `positive parent timing cannot become an integrity verdict`() {
+    @Test fun `positive parent timing raises anomaly but leaves AVC evidence informational`() {
         val sample = SelinuxAvcLookupSnapshot(
             state = SelinuxAvcLookupState.UNAVAILABLE,
             parentTiming = SelinuxAvcParentTiming(
@@ -47,7 +47,8 @@ class SelinuxAvcLookupMethodTest {
         assertEquals(SelinuxOracle.APP_ZYGOTE_ATTR_TIMING, method.oracle)
         assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE,
             method.avcLookup!!.timingVerdict)
-        assertNull(method.isSecure)
+        assertEquals(false, method.isSecure)
+        assertNull(buildAvcLookupMethod(sample).isSecure)
     }
 
     private val collected = SelinuxAvcLookupSnapshot(

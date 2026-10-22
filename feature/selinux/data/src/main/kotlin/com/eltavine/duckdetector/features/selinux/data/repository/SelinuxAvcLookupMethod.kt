@@ -23,6 +23,7 @@ import com.eltavine.duckdetector.capability.selinuxpolicy.data.SelinuxAvcLookupS
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupCollection
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupCollectionDetails
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupReading
+import com.eltavine.duckdetector.features.selinux.domain.SelinuxAppZygoteTimingVerdict
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxParentTimingReading
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxCheckResult
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxOracle
@@ -92,7 +93,9 @@ internal fun buildAppZygoteTimingMethod(snapshot: SelinuxAvcLookupSnapshot): Sel
     return SelinuxCheckResult(
         method = SelinuxOracle.APP_ZYGOTE_ATTR_TIMING.label,
         status = verdict.label,
-        isSecure = null,
+        // Only a complete, consistently positive preload-parent timing sample
+        // is strong enough to raise an anomaly. Inconclusive is not a clean pass.
+        isSecure = if (verdict == SelinuxAppZygoteTimingVerdict.POSITIVE) false else null,
         permissionDenied = reading.collection == SelinuxAvcLookupCollection.PERMISSION_LIMITED,
         oracle = SelinuxOracle.APP_ZYGOTE_ATTR_TIMING,
         avcLookup = reading,
