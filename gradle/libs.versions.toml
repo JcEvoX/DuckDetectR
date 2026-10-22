@@ -17,6 +17,7 @@ materialKolor = "5.0.1"
 graphicsShapes = "1.1.0"
 datastore = "1.2.1"
 bouncycastle = "1.86"
+cbor = "4.5.6"
 hiddenApiBypass = "6.2"
 soter = "2.0.7"
 coroutines = "1.11.0"
@@ -53,6 +54,7 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 bouncycastle-bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+cbor = { module = "com.upokecenter:cbor", version.ref = "cbor" }
 hiddenapibypass = { group = "org.lsposed.hiddenapibypass", name = "hiddenapibypass", version.ref = "hiddenApiBypass" }
 soter-core = { group = "com.github.Tencent.soter", name = "soter-core", version.ref = "soter" }
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
