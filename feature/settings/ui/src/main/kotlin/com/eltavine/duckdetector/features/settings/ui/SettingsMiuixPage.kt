@@ -35,6 +35,7 @@ import com.eltavine.duckdetector.features.settings.presentation.model.SettingsUi
 import com.eltavine.duckdetector.features.settings.ui.components.AboutSection
 import com.eltavine.duckdetector.features.settings.ui.components.ContributorNameWordmark
 import com.eltavine.duckdetector.features.settings.ui.components.ContributorsSection
+import com.eltavine.duckdetector.features.settings.ui.components.ConsentPermissionButton
 import com.eltavine.duckdetector.features.settings.ui.components.SettingsGroup
 import com.eltavine.duckdetector.features.settings.ui.components.SettingsSection
 import io.github.xiaotong6666.uihelper.adaptive.SettingsDropdownItem
@@ -102,6 +103,7 @@ internal fun SettingsMiuixPage(
                                 icon = toggle.setting.icon,
                                 onToggle = { toggle.onCheckedChange(!toggle.checked) },
                             )
+                            toggle.onManagePermissions?.let { ConsentPermissionButton(it) }
                         }
                     }
                 }

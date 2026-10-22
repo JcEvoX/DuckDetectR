@@ -73,6 +73,7 @@ fun DuckDetectorApp(onUiModeChange: (UiMode) -> Unit) {
         return
     }
 
+    val onDecideDetectorConsent = rememberConsentDecisionHandler()
     val context = LocalContext.current
     val appContext = context.applicationContext
     val agreementStore = remember(appContext) { AgreementAcceptanceStore.getInstance(appContext) }
@@ -299,11 +300,7 @@ fun DuckDetectorApp(onUiModeChange: (UiMode) -> Unit) {
                                 notificationConsentStore.markLiveUpdatesPrompted()
                             }
                         },
-                        onDecideConsent = { consentCard, granted ->
-                            scope.launch {
-                                consentCard.consent.decide(appContext, granted)
-                            }
-                        },
+                        onDecideConsent = onDecideDetectorConsent,
                         onAcknowledgePackageVisibility = {
                             scope.launch {
                                 packageVisibilityReviewStore.acknowledgeRestrictedInventory()

@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import com.eltavine.duckdetector.ui.rememberAppPermissionSettings
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -113,6 +114,7 @@ internal fun StartupPolicyScreen(
     onUiModeChange: (UiMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val openPermissionSettings = rememberAppPermissionSettings()
     val uiMode = LocalUiMode.current
     val cards = if (
         gateState == StartupGateState.LOADING ||
@@ -138,6 +140,7 @@ internal fun StartupPolicyScreen(
         ) + consentCards.map { consentCard ->
             consentPolicyCard(
                 prompt = consentCard.card.prompt,
+                onManagePermissions = if (consentCard.card.runtimePermissions.isEmpty()) null else openPermissionSettings,
                 decision = consentDecisions.getValue(consentCard.consent.id),
                 onDecide = { granted -> onDecideConsent(consentCard, granted) },
             )

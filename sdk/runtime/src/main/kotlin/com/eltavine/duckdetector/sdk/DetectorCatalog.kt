@@ -24,6 +24,7 @@ import com.eltavine.duckdetector.features.customrom.detector.CustomRomDetector
 import com.eltavine.duckdetector.features.dangerousapps.detector.DangerousAppsDetector
 import com.eltavine.duckdetector.features.heapresidue.detector.HeapResidueDetector
 import com.eltavine.duckdetector.features.kernelcheck.detector.KernelCheckDetector
+import com.eltavine.duckdetector.features.locationrisk.detector.LocationRiskDetector
 import com.eltavine.duckdetector.features.lsposed.detector.LSPosedDetector
 import com.eltavine.duckdetector.features.memory.detector.MemoryDetector
 import com.eltavine.duckdetector.features.mount.detector.MountDetector
@@ -55,6 +56,7 @@ public object DetectorCatalog {
         DangerousAppsDetector,
         HeapResidueDetector,
         KernelCheckDetector,
+        LocationRiskDetector,
         LSPosedDetector,
         MemoryDetector,
         MountDetector,
