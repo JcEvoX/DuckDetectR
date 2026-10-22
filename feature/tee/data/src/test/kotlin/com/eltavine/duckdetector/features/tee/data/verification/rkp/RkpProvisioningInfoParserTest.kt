@@ -98,6 +98,28 @@ class RkpProvisioningInfoParserTest {
     }
 
     @Test
+    fun `BER octet strings are not accepted as DER extension wrappers`() {
+        assertNull(parser.parse(hex("0408 a201010463544545")).issue)
+        for (ber in listOf(
+            "048108 a201010463544545", // Non-minimal length encoding.
+            "240a 0408 a201010463544545", // Constructed OCTET STRING.
+            "2480 0408 a201010463544545 0000", // Indefinite-length OCTET STRING.
+        )) {
+            val result = parser.parse(hex(ber))
+            assertNotNull(ber, result.issue)
+            assertNull(ber, result.validatedEntity)
+        }
+    }
+
+    @Test
+    fun `deeply constructed ASN1 cannot escape as a stack overflow`() {
+        val constructed = hex("2480".repeat(2000) + "0408 a201010463544545" + "0000".repeat(2000))
+        val result = parser.parse(constructed)
+        assertNotNull(result.issue)
+        assertNull(result.validatedEntity)
+    }
+
+    @Test
     fun `excessive nesting and extension size have explicit unavailable states`() {
         assertNotNull(parseCbor("a105" + "81".repeat(600) + "00").issue)
         assertNotNull(parser.parse(ByteArray(65537)).issue)

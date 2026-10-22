@@ -2,6 +2,7 @@ package com.eltavine.duckdetector.features.tee.data.verification.rkp
 
 import com.upokecenter.cbor.CBORObject
 import com.upokecenter.cbor.CBORType
+import org.bouncycastle.asn1.ASN1Encoding
 import org.bouncycastle.asn1.ASN1OctetString
 import org.bouncycastle.asn1.ASN1Primitive
 
@@ -12,7 +13,10 @@ internal class RkpProvisioningInfoParser {
             return RkpProvisioningInfo(issue = "Provisioning info exceeded the 64 KiB decoding limit.")
         }
         val map = try {
-            val payload = ASN1OctetString.getInstance(ASN1Primitive.fromByteArray(extension)).octets
+            val wrapped = ASN1OctetString.getInstance(ASN1Primitive.fromByteArray(extension))
+            // X509Extension.getExtensionValue promises DER, whereas the ASN.1 decoder also accepts BER.
+            require(extension.contentEquals(wrapped.getEncoded(ASN1Encoding.DER)))
+            val payload = wrapped.octets
             // Defaults reject duplicate keys and trailing data and leave shared references unresolved.
             CBORObject.DecodeFromBytes(payload).also {
                 require(!it.isTagged && it.type == CBORType.Map)

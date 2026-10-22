@@ -1,6 +1,7 @@
 package com.eltavine.duckdetector.features.tee.data.verification.rkp
 
 import com.eltavine.duckdetector.features.tee.data.verification.certificate.ChainStructureResult
+import com.eltavine.duckdetector.features.tee.data.verification.certificate.ChainStructureAnalyzer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -74,6 +75,27 @@ class RkpExtensionAnalyzerTest {
         assertNull(result.consistencyIssue)
     }
 
+    @Test
+    fun `leaf added extensions cannot override the provisioning certificate nearest the root`() {
+        val forged = derCbor("a3 01 00 04 63 544545 05 a1 01 68 415050524f564544")
+        val server = derCbor("a3 01 00 04 63 544545 05 a1 01 6c 4e4f545f415050524f564544")
+        val chain = listOf(
+            ProvisioningCertificate(forged, attestation = true),
+            ProvisioningCertificate(attestation = true),
+            ProvisioningCertificate(server),
+            ProvisioningCertificate(),
+        )
+        val structure = ChainStructureAnalyzer().inspect(chain)
+        assertEquals(1, structure.trustedAttestationIndex)
+        assertEquals(2, structure.provisioningIndex)
+        val result = analyzer.analyze(chain, structure, true, true)
+        assertEquals(2, result.attestationExtensionCount)
+        assertTrue(result.serverSigned)
+        val metadata = requireNotNull(result.buildMetadata)
+        assertTrue(metadata.contains("\"NOT_APPROVED\""))
+        assertFalse(metadata.contains("\"APPROVED\""))
+    }
+
     private fun chain(
         extension: ByteArray = derCbor("a4 01 00 03 64 41636d65 04 63 544545 05 a1 01 6c 4e4f545f415050524f564544"),
     ): List<X509Certificate> {
@@ -82,9 +104,15 @@ class RkpExtensionAnalyzerTest {
 }
 
 @Suppress("DEPRECATION")
-private class ProvisioningCertificate(private val extension: ByteArray? = null) : X509Certificate() {
-    override fun getExtensionValue(oid: String?): ByteArray? =
-        if (oid == "1.3.6.1.4.1.11129.2.1.30") extension else null
+private class ProvisioningCertificate(
+    private val extension: ByteArray? = null,
+    private val attestation: Boolean = false,
+) : X509Certificate() {
+    override fun getExtensionValue(oid: String?): ByteArray? = when (oid) {
+        "1.3.6.1.4.1.11129.2.1.30" -> extension
+        "1.3.6.1.4.1.11129.2.1.17" -> if (attestation) byteArrayOf(0x30, 0x00) else null
+        else -> null
+    }
 
     override fun getEncoded() = byteArrayOf()
     override fun verify(key: PublicKey?) = Unit
@@ -97,6 +125,8 @@ private class ProvisioningCertificate(private val extension: ByteArray? = null) 
     override fun getSerialNumber() = BigInteger.ONE
     override fun getIssuerDN() = X500Principal("CN=fixture")
     override fun getSubjectDN() = X500Principal("CN=fixture")
+    override fun getIssuerX500Principal() = X500Principal("CN=fixture")
+    override fun getSubjectX500Principal() = X500Principal("CN=fixture")
     override fun getNotBefore() = Date(0)
     override fun getNotAfter() = Date(86_400_000)
     override fun getTBSCertificate() = byteArrayOf()
