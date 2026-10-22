@@ -22,14 +22,17 @@ import org.junit.Test
 
 class AdbPropertySnapshotTest {
     @Test fun `property projections preserve known unknown and exact encoding semantics`() {
-        assertEquals(true, AdbPropertySnapshot(initAdbdState = "RUNNING").initAdbdRunning)
-        assertEquals(false, AdbPropertySnapshot(initAdbdState = "Stopped").initAdbdRunning)
-        listOf(null, "restarting", " stopped ").forEach {
-            assertNull(AdbPropertySnapshot(initAdbdState = it).initAdbdRunning)
+        assertEquals(AdbDaemonState.RUNNING, AdbPropertySnapshot(initAdbdState = "RUNNING").daemonState)
+        assertEquals(AdbDaemonState.STOPPED, AdbPropertySnapshot(initAdbdState = "Stopped").daemonState)
+        assertNull(AdbPropertySnapshot().daemonState)
+        listOf("restarting", " stopped ", "").forEach {
+            val snapshot = AdbPropertySnapshot(initAdbdState = it)
+            assertEquals(AdbDaemonState.OTHER, snapshot.daemonState)
+            assertEquals(it, snapshot.initAdbdState)
         }
-        assertEquals(true, AdbPropertySnapshot(sysUsbState = "mtp, AdB ").sysUsbAdbEnabled)
-        assertEquals(false, AdbPropertySnapshot(sysUsbState = "adbd").sysUsbAdbEnabled)
-        assertNull(AdbPropertySnapshot().sysUsbAdbEnabled)
+        assertEquals(true, AdbPropertySnapshot(sysUsbState = "mtp, AdB ").usbAdbFunctionEnabled)
+        assertEquals(false, AdbPropertySnapshot(sysUsbState = "adbd").usbAdbFunctionEnabled)
+        assertNull(AdbPropertySnapshot().usbAdbFunctionEnabled)
         assertTrue(AdbPropertySnapshot(testHarnessMode = "1").testHarnessEnabled)
         listOf(null, "0", "true", " 1 ").forEach {
             assertFalse(AdbPropertySnapshot(testHarnessMode = it).testHarnessEnabled)

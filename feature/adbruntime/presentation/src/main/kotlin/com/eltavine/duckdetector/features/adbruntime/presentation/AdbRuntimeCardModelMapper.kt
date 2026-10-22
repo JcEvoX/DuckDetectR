@@ -19,6 +19,7 @@ package com.eltavine.duckdetector.features.adbruntime.presentation
 
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbDaemonState
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbFindingKind
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbMdnsServiceKind
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbMdnsSnapshot
@@ -113,12 +114,16 @@ class AdbRuntimeCardModelMapper {
             settingRow("USB debugging setting", sample.usbDebuggingEnabled, report, usbSetting = true),
             settingRow("Wireless debugging setting", sample.wirelessDebuggingEnabled, report),
             infoRow("init.svc.adbd", sample.properties.initAdbdState ?: "Unavailable").copy(
-                status = observationStatus(sample.properties.initAdbdRunning),
+                status = when (sample.properties.daemonState) {
+                    AdbDaemonState.RUNNING -> DetectorStatus.warning()
+                    AdbDaemonState.STOPPED -> DetectorStatus.allClear()
+                    AdbDaemonState.OTHER, null -> DetectorStatus.info(InfoKind.SUPPORT)
+                },
             ),
             usbRuntimeRow(sample),
             mdnsRow(report.latestMdns),
             infoRow("sys.usb.state", sample.properties.sysUsbState ?: "Unavailable").copy(
-                status = observationStatus(sample.properties.sysUsbAdbEnabled),
+                status = observationStatus(sample.properties.usbAdbFunctionEnabled),
             ),
         )
     }

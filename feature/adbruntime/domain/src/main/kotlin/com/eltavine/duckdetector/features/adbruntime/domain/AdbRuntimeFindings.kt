@@ -28,7 +28,7 @@ fun AdbRuntimeReport.findings(): List<AdbRuntimeFinding> {
     if (stage != AdbRuntimeStage.READY || samples.size < 2) {
         return emptyList()
     }
-    if (!samples.all { sample -> sample.properties.initAdbdRunning == false }) {
+    if (!samples.all { sample -> sample.properties.daemonState == AdbDaemonState.STOPPED }) {
         return emptyList()
     }
     val endpoint = stableProtocolEndpoint() ?: return emptyList()
@@ -64,9 +64,9 @@ fun AdbRuntimeReport.isAdbActive(): Boolean {
 
     return usbSettingActive ||
         wifiSettingActive ||
-        latest.properties.initAdbdRunning == true ||
+        latest.properties.daemonState == AdbDaemonState.RUNNING ||
         latest.usb.adbFunctionEnabled ||
-        latest.properties.sysUsbAdbEnabled == true ||
+        latest.properties.usbAdbFunctionEnabled == true ||
         latestMdns.localServiceObserved
 }
 

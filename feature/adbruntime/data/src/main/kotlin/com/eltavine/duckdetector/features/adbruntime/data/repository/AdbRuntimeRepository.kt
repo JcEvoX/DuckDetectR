@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.SystemClock
 import com.eltavine.duckdetector.core.detector.DetectorScanner
 import com.eltavine.duckdetector.core.evidence.FailureName
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbDaemonState
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbProbeState
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeReport
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeSample
@@ -87,7 +88,7 @@ class AdbRuntimeRepository(
     }
 
     private fun AdbRuntimeSample.initStopped(): Boolean =
-        properties.initAdbdState.equals("stopped", ignoreCase = true)
+        properties.daemonState == AdbDaemonState.STOPPED
 
     private fun AdbRuntimeSample.hasObservableSource(): Boolean =
         properties.initAdbdState != null ||
