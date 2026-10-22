@@ -111,7 +111,7 @@ internal class AndroidNetworkCollector(context: Context) {
 internal fun <T, R> NetworkObservation<T>.map(transform: (T) -> R): NetworkObservation<R> =
     NetworkObservation(state, value?.let(transform), failure)
 
-private fun ProxyInfo.toConfiguration(): ProxyConfiguration = ProxyConfiguration(
+internal fun ProxyInfo.toConfiguration(): ProxyConfiguration = ProxyConfiguration(
     kind = if (pacFileUrl != null && pacFileUrl != Uri.EMPTY) ProxyKind.PAC else ProxyKind.STATIC,
     port = port,
     exclusionCount = exclusionList?.size ?: 0,

@@ -166,6 +166,28 @@ Reproduce the baseline instrumentation with `./gradlew :feature:networkrisk:data
 
 The framework/JVM cross-check also passed four ordinary-UID instrumentation tests on API 36, including a temporary process-local HTTP proxy override. The override produced an INCONCLUSIVE source difference while the framework proxy remained unchanged; the test restored the properties and made no network requests.
 
+### Controlled VPN and offline coverage
+
+The test APK includes an opt-in, test-only `VpnService` fixture. Its owner keeps and closes a local TUN descriptor through an explicit bound control connection; no socket, packet forwarding, remote server or DNS query is implemented. The fixture manifest and its INTERNET permission are confined to androidTest. The production collector still changes no network binding and sends no requests.
+
+The fixture follows the public [VpnService](https://developer.android.com/reference/android/net/VpnService) contract and the release-matched Android 15 [VpnService.Builder](https://android.googlesource.com/platform/frameworks/base/+/android-15.0.0_r1/core/java/android/net/VpnService.java) (`addAllowedApplication`, `allowBypass`, `setHttpProxy`, `establish`) and [Vpn](https://android.googlesource.com/platform/frameworks/base/+/android-15.0.0_r1/services/core/java/com/android/server/connectivity/Vpn.java) implementations (authorization, per-UID ranges and descriptor lifecycle). PAC is not supported over VpnService; its additional runtime test constructs a ProxyInfo and checks the privacy projection/comparison without installing a PAC configuration or fetching a script.
+
+On 2026-10-22, seven instrumentation tests passed per release on separate read-only arm64 API 29 and API 36 emulator instances with the versions in the table above. They cover the four baseline probes, constructed PAC projection, VPN establishment, caller exclusion using an allowlist, VPN replacement/stop, and explicit process binding to the underlay while the calling UID retains a VPN default. The latter verifies that the VPN's static HTTP proxy yields to the process-bound underlay's absent proxy and that the JVM/framework views align. These are operating-system VPN fixtures, not enterprise VPN, third-party client or transparent-proxy module acceptance.
+
+A separate API 29 offline run disabled Wi-Fi and mobile data in the test harness, verified that ConnectivityService reported no active default network, and passed the ordinary-UID framework test with `expectedNetwork=absent` and `expectedProxy=absent`. The sample retained NOT_OBSERVED and INFO/SUPPORT. Connectivity was restored before the connected suite. Shell setup privileges are not adopted by the test application; the framework test verifies an application UID.
+
+Reproduce only on a dedicated emulator, after installing the test APK:
+
+```sh
+adb -s SERIAL shell appops set com.eltavine.duckdetector.features.networkrisk.data.test ACTIVATE_VPN allow
+adb -s SERIAL shell am instrument -w -r -e runVpnFixture true -e expectedNetwork present \
+  com.eltavine.duckdetector.features.networkrisk.data.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Without `runVpnFixture=true`, both VPN tests skip and do not establish a VPN. The test runner must first wait for a connected underlay and an absent global proxy. For the offline check, disable Wi-Fi/mobile data on the dedicated instance, wait for no active default network, and select `NetworkRiskRuntimeTest#frameworkQueriesRemainScopedAndUnprivileged` with `expectedNetwork=absent` and `expectedProxy=absent` instead. Restore the instance's connectivity after testing.
+
+Twenty-four Network Risk JVM tests passed (9 domain, 6 data, 9 presentation), including error aggregation from root/nested network queries, JVM properties, inventory, signers and deployment metadata. Coverage limitations remain non-errors. Full unitTest, application debug build/lint, SDK publication/verification and the separate SDK consumer build passed with the pinned uihelper revision; the seven repository guards passed. These build results do not replace device-level App/SDK parity testing.
+
 Broader device acceptance is **pending**. The following matrix must be executed using an ordinary-permission app, with rules/module logs inspected separately for ground truth. Source review, unit fixtures and emulator smoke tests do not substitute for those scenarios.
 
 | Scenarios required | Ground truth and expected ordinary-app result | Status |
@@ -174,7 +196,7 @@ Broader device acceptance is **pending**. The following matrix must be executed 
 | Box4Magisk and Box for Root: REDIRECT, TPROXY, TUN, hybrid; changed ports; disabled control API | Record deployment revision, core/version, effective rules and logs; metadata scope remains independent of service/traffic. | Pending rooted test device, ordinary app permissions |
 | Both modules: TCP/UDP and IPv4/IPv6, allow/bypass app lists | Compare individual controlled flows with effective rules and logs; passive implementation does not assert flow routing. | Pending device test |
 | Enterprise VPN, local-filter VPN, manual HTTP proxy, PAC and Private DNS alone | INFO context; no module/running-service assertion; PAC configuration is not per-request use. | Manual HTTP configuration verified on API 29; remaining scenarios pending |
-| Offline, blocked ACCESS_NETWORK_STATE, network switching and missing/vanished handles | Preserve NOT_OBSERVED/PERMISSION_LIMITED/UNAVAILABLE/INCONCLUSIVE and sample scope; never a clean security claim. | Automated fixtures plus pending device test |
+| Offline, blocked ACCESS_NETWORK_STATE, network switching and missing/vanished handles | Preserve NOT_OBSERVED/PERMISSION_LIMITED/UNAVAILABLE/INCONCLUSIVE and sample scope; never a clean security claim. | API 29 offline and API 29/36 controlled VPN transitions passed; permission-restricted and broader device switching cases pending |
 | Restricted visibility, other user/work profile, unknown/re-signed key | No globally uninstalled claim; identity unverified unless exact pinned current signer set. | Restricted visibility verified on API 36; other-profile/re-signed scenarios pending |
 | App and SDK | Same detector, report, mapper, status and minimized export; host manifest/UID may legitimately yield different observations. | Build/unit verification; pending device parity test |
 

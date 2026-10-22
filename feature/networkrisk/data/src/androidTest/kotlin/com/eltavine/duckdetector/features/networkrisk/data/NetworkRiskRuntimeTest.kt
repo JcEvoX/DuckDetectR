@@ -18,6 +18,7 @@
 package com.eltavine.duckdetector.features.networkrisk.data
 
 import android.net.ConnectivityManager
+import android.net.ProxyInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Process
@@ -25,8 +26,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.eltavine.duckdetector.features.networkrisk.data.clients.NetworkClientCollector
 import com.eltavine.duckdetector.features.networkrisk.data.network.AndroidNetworkCollector
+import com.eltavine.duckdetector.features.networkrisk.data.network.toConfiguration
 import com.eltavine.duckdetector.features.networkrisk.data.modules.Box4MagiskCollector
 import com.eltavine.duckdetector.features.networkrisk.data.modules.BoxForRootCollector
+import com.eltavine.duckdetector.core.evidence.InfoKind
 import com.eltavine.duckdetector.features.networkrisk.domain.*
 import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import org.junit.Assert.*
@@ -47,10 +50,24 @@ class NetworkRiskRuntimeTest {
         assertTrue(window.durationMs >= 0)
         assertNotEquals(ObservationState.UNAVAILABLE, window.snapshot.defaultNetwork.state)
         assertEquals(ObservationState.OBSERVED, window.snapshot.visibleNetworks.state)
+        when (arguments.getString("expectedNetwork")) {
+            "absent" -> {
+                assertEquals(ObservationState.NOT_OBSERVED, window.snapshot.defaultNetwork.state)
+                assertEquals(InfoKind.SUPPORT, NetworkRiskReport(NetworkRiskStage.READY, network = window).toDetectorStatus().infoKind)
+            }
+            "present" -> assertEquals(ObservationState.OBSERVED, window.snapshot.defaultNetwork.state)
+        }
         when (arguments.getString("expectedProxy")) {
             "present" -> assertEquals(ObservationState.OBSERVED, window.snapshot.defaultProxy.state)
             "absent" -> assertEquals(ObservationState.NOT_OBSERVED, window.snapshot.defaultProxy.state)
         }
+    }
+
+    @Test fun pacConfigurationIsNotAStaticEndpoint() {
+        val configuration = ProxyInfo.buildPacProxy(Uri.parse("http://127.0.0.1:9/fixture.pac")).toConfiguration()
+        assertEquals(ProxyKind.PAC, configuration.kind)
+        assertEquals(ProxySourceComparison.PAC_NOT_COMPARABLE, compareProxySources(
+            NetworkObservation.observed(configuration), NetworkObservation.absent(), false))
     }
 
     @Test fun installedReleaseFixturesUseExactPackageAndSigningIdentity() {
