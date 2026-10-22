@@ -39,11 +39,31 @@ enum class AdbFindingKind {
     INIT_STOPPED_WITH_ADB_PROTOCOL,
 }
 
+enum class AdbDaemonState {
+    RUNNING,
+    STOPPED,
+    OTHER,
+}
+
 data class AdbPropertySnapshot(
     val testHarnessMode: String? = null,
     val initAdbdState: String? = null,
     val sysUsbState: String? = null,
-)
+) {
+    val daemonState: AdbDaemonState?
+        get() = when {
+            initAdbdState == null -> null
+            initAdbdState.equals("running", ignoreCase = true) -> AdbDaemonState.RUNNING
+            initAdbdState.equals("stopped", ignoreCase = true) -> AdbDaemonState.STOPPED
+            else -> AdbDaemonState.OTHER
+        }
+
+    val testHarnessEnabled: Boolean
+        get() = testHarnessMode == "1"
+
+    val usbAdbFunctionEnabled: Boolean?
+        get() = sysUsbState?.split(',')?.any { function -> function.trim().equals("adb", ignoreCase = true) }
+}
 
 data class UsbRuntimeSnapshot(
     val state: AdbProbeState,

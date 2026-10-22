@@ -28,7 +28,7 @@ fun AdbRuntimeReport.findings(): List<AdbRuntimeFinding> {
     if (stage != AdbRuntimeStage.READY || samples.size < 2) {
         return emptyList()
     }
-    if (!samples.all { sample -> sample.properties.initAdbdState.isStopped() }) {
+    if (!samples.all { sample -> sample.properties.daemonState == AdbDaemonState.STOPPED }) {
         return emptyList()
     }
     val endpoint = stableProtocolEndpoint() ?: return emptyList()
@@ -59,14 +59,14 @@ fun AdbRuntimeReport.isAdbActive(): Boolean {
         latest.usbDebuggingEnabled == true &&
         !(platformApiLevel != null &&
             platformApiLevel >= ANDROID_13_API &&
-            latest.properties.testHarnessMode == "1")
+            latest.properties.testHarnessEnabled)
     val wifiSettingActive = settingsUsable && latest.wirelessDebuggingEnabled == true
 
     return usbSettingActive ||
         wifiSettingActive ||
-        latest.properties.initAdbdState.equals("running", ignoreCase = true) ||
+        latest.properties.daemonState == AdbDaemonState.RUNNING ||
         latest.usb.adbFunctionEnabled ||
-        latest.properties.sysUsbState.containsFunction("adb") ||
+        latest.properties.usbAdbFunctionEnabled == true ||
         latestMdns.localServiceObserved
 }
 
@@ -97,10 +97,5 @@ private fun AdbMdnsSnapshot.confirmedEndpoint(): AdbProtocolEndpoint? {
 
 private fun AdbProtocolEndpoint.isSameListener(other: AdbProtocolEndpoint): Boolean =
     serviceKind == other.serviceKind && address == other.address && port == other.port
-
-private fun String?.isStopped(): Boolean = equals("stopped", ignoreCase = true)
-
-private fun String?.containsFunction(function: String): Boolean =
-    orEmpty().split(',').any { it.trim().equals(function, ignoreCase = true) }
 
 private const val ANDROID_13_API = 33
