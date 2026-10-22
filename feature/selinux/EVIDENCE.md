@@ -99,7 +99,232 @@ false-positive rate or coverage of all Android kernels is claimed.
 - Result states: A≈1/B≈1, A≈1/B≈2, A≈2/B≈2, unclassified (typed as `SelinuxAvcLookupProfile`); not collected, timing only, permission limited, unsupported, unavailable, inconclusive (`SelinuxAvcLookupCollection`).
 - Interpretation: informational only. A≈1/B≈2 and A≈2/B≈2 add one informational impact line; every reading stays an informational method row and never changes the card's status, verdict or summary, and A≈1/B≈1 is shown as not clean. This shares the attr/current path with the controlled context-write and timing observations and is not counted as an independent root indicator.
 
+### App Zygote invalid-context timing (experimental)
+
+Current contract: a lightweight disposable child verifies the B/A EINVAL controls
+before the unpinned preload parent collects 32 warmup and 512 AB/BA pairs. The full
+pinned AVC child runs afterward. The parent accepts only pairs whose sampled CPU
+endpoints both equal its entry CPU; this also rejects a move between pairs without
+changing affinity. Endpoint checks cannot detect an unobserved move away and back.
+A completed parent sample is retained even if the later optional AVC child fails.
+Its own errors, identity checks, medians and completion state determine usability.
+
+Timing direction is informational only. A positive direction requires a positive
+paired lower median, at least 12/16 positive blocks and more than 256 A-slower
+pairs. A negative direction requires a negative paired lower median, at least
+12/16 negative blocks and at most 256 A-slower pairs. Other complete samples are
+inconclusive; missing and legacy parent samples are unavailable. These consistency
+gates are diagnostic conventions, not calibrated statistical significance tests.
+Neither direction changes the card's integrity status or sets `isSecure`.
+Stock GKI already parses A but skips B before credential allocation, so it supplies
+no guaranteed timing sign. The CPU crossover measurements below reinforce that
+limitation. No matched stock/OEM/kernel calibration is available to justify a
+universal positive-sign hiding verdict. Historical Danger policies described below
+refer to earlier experimental builds, not the current interpretation.
+
+The preflight limits obvious fault/permission failures to a disposable child; it
+does not prove that an arbitrary modified handler will behave identically in the
+live parent. Parent writes are synchronous and have no interruptible syscall
+deadline. No new physical-device measurements accompany the current consistency
+and evidence-retention changes; host/JVM tests validate their control flow only.
+
+#### CPU crossover counterexample (2026-10-20)
+
+The user reported reducing the kernel's Hide latency. The exact kernel patch was
+not available for review. On the connected physical device, `ksud feature list`
+reported `selinux_hide` enabled; it was not toggled during this experiment.
+All runs kept `com.eltavine.duckdetector` and UID 10625. No uninstall, data clear,
+reboot, or package rename was used. Each round below created distinct preload
+parent/child PIDs and ran two scans of its retained result. Every strict acquisition
+test passed: 512 pairs in each process, zero child migrations, available medians,
+complete parent timing, and a returned carrier snapshot. Positive classification
+was deliberately not required by these acquisition tests.
+
+| Configuration (three fresh preloads each) | Child paired medians A−B (ns) | Parent paired medians A−B (ns) |
+| --- | --- | --- |
+| Original trace Debug, CPU 0, initial screen-off group | -416, 260, 989 | 260, 209, 208 |
+| Original trace Debug, CPU 0, wake before each round | 261, -51, 469 | 260, 209, 209 |
+| Timing sources O2, CPU 0, wake before each round | 260, 157, 208 | 261, 261, 156 |
+| Timing sources O2, CPU 7, wake before each round | -52, -52, -103 | -53, -52, -104 |
+| Same O2 CPU 0 APK reinstalled, wake before each round | 521, 416, 364 | 260, 155, 260 |
+| Additional O2 CPU 0 runs before restoring the trace APK | 312, 260, 521 | -52, 261, 208 |
+
+The device was observed in Dozing state after the initial group; subsequent groups
+explicitly sent WAKEUP before each round. Frequency, temperature, and background
+load were not fixed. The screen-off and awake groups must not be pooled as a
+controlled power-state experiment.
+
+The controlled O2 builds differ only in CPU selection: ascending allowed-CPU search
+selected CPU 0, while descending search selected CPU 7. Both timing implementation
+files were compiled with verified `-O2`; the sampling and classification code was
+otherwise unchanged between these two builds. CPU 0's six O2 child runs each had
+16/16 positive blocks. CPU 7's three runs had positive/negative/zero block counts
+0/13/3, 0/16/0 and 0/16/0. All reported zero migrations. The O2 CPU 0 to CPU 7 to
+CPU 0 crossover therefore changed the sign and classification without changing
+the Hide setting. Parent diagnostics changed sign too; this is not solely a forked
+child effect. Selecting CPU 7 is not a validated detection fix.
+The additional CPU 0 runs also include a negative parent diagnostic, so the observed
+CPU effect is not a guarantee that every parent or child run on a given CPU has
+the same sign. Their child block counts were 14/2/0, 16/0/0 and 16/0/0.
+
+APK SHA-256 provenance:
+
+- Original trace: `c3b547e27a8ed6331bcf7bf54e5f2994d2708dde2b9e5aff1e1a2ec7ede3cac8`.
+- O2 CPU 0: `0f3dc7c4bd0459280c804a07f3d96638fa06f83fc5944b4898deaad0c34262bc`.
+- O2 CPU 7: `06b8f3a04ea9202809e98eb6f3710f4b4b9f6a3c7327aafcea448219afd66311`.
+
+On-device APK hashes were verified after installations. The O2 variants were built
+from `ad14ebe0728c`; the older trace APK has a different revision, so its comparison
+with O2 is not a whole-application single-variable optimization experiment. The two
+O2 variants and the CPU 0 reinstall provide the stronger CPU crossover control.
+Experiment-only optimization and CPU-selection source changes were reverted.
+The original trace APK was restored with data preserved and its on-device hash
+reverified. A final strict two-scan acquisition test passed with fresh parent/child
+PIDs 29604/29622, CPU 0, paired medians 260/468 ns, 512 pairs and no migrations.
+
+A fresh installed standalone PoC sample (parent PID 18408) accepted 512 pairs with
+zero within-pair migrations, paired median -1 ns, and A slower on 205/512 pairs.
+Its header reported entry CPU 5, but this path does not pin affinity and cannot
+prove a single CPU throughout the sample. Its O2 parent-only implementation is
+not interchangeable with Duck's pinned child. The screenshot's older PoC sample
+must not be treated as a simultaneous same-CPU control.
+
+These results demonstrate fresh-process timing instability and CPU-dependent sign,
+not stale Zygote reuse in these successful runs. They do not resolve the historical
+startup failure or establish a Hide-OFF false-positive rate: Hide remained enabled.
+Within-run block agreement does not establish kernel causation or cross-CPU
+calibration. A positive zero-boundary result cannot by itself establish hiding;
+a negative result cannot exclude it. The exact modified kernel source and matched
+CPU/kernel OFF/ON controls remain necessary to attribute the changed costs.
+
+- Observable signal: 512 alternating AB/BA timings in the actual preload parent, after 32 warmup pairs and a disposable-child preflight, before the full AVC workload. A is the deliberately invalid type `u:r:__selinux_hide_probe_invalid__:s0`; B changes only its first byte to a newline. Every write must fail with EINVAL. `CLOCK_MONOTONIC_RAW` brackets each write separately; even-sized medians use the lower-middle element `(n - 1) / 2`. PID, observed CPU endpoints, paired median, A-slower count and sixteen ordered block medians are retained. The later pinned child's independent timings and counters remain diagnostic; partial samples retain medians without becoming a completed measurement.
+- Producing subsystem: App Zygote preload, procfs attr/current, the SELinux LSM context parser and scheduler/clock observations.
+- Mechanism: equal-length invalid-type and newline-prefixed writes exercise different stock paths; an altered dual-policy parser can change their relative cost. EINVAL controls, unchanged parent identity, 512 complete same-observed-CPU pairs and block consistency limit which samples expose a direction. They do not attribute its cause.
+- References: [ZygotePreload API](https://developer.android.com/reference/android/app/ZygotePreload); ACK [android13-5.15-2025-01_r1 hooks.c](https://android.googlesource.com/kernel/common/+/refs/tags/android13-5.15-2025-01_r1/security/selinux/hooks.c) (`selinux_setprocattr`), and the KernelSU source revision linked below. The stock source converts A before credential allocation but skips conversion for B, so no timing-sign guarantee follows from these paths.
+- Applicability: API >=29, application UID >=10000, app_zygote context with a field-bounded optional MLS category suffix, readable enforcing state and EINVAL controls. Collection changes no affinity; sampled endpoints must remain on the entry CPU. The cited GKI 5.15 comparison and device measurements do not certify other OEMs, kernel revisions or CPU classes.
+- Visibility limits: scheduling, power state, caching and OEM policy/implementation can change costs. Sampled CPU endpoints cannot observe a migration away and back between reads. The synchronous parent syscall has no interruptible timeout; a successful child preflight cannot prove identical handling in every modified kernel. AVC counters and timing share a carrier and are not independent root evidence.
+- Result states: positive direction, negative direction, inconclusive, unavailable; all are informational. Missing and legacy parent records cannot become measured negatives. Later child counter failures retain the separate completed parent evidence.
+- Provenance: [GKI 5.15 hooks.c](https://github.com/aosp-mirror/kernel_common/blob/android13-5.15-2025-01_r1/security/selinux/hooks.c#L6542-L6684) first checks PROCESS__SETCURRENT. A fails during the invalid-type SID conversion, while B skips conversion then runs prepare_creds and abort_creds because its SID is zero; [GKI 5.15 cred.c](https://github.com/aosp-mirror/kernel_common/blob/android13-5.15-2025-01_r1/kernel/cred.c#L255-L303) shows allocation, copying and LSM preparation. [KernelSU #3877 / 2697f36f](https://github.com/tiann/KernelSU/blob/2697f36fc8ec10ab73e97ec1724e0f3212116ba2/kernel/feature/selinux_hide.c#L232-L310) retains the early AVC check while [its dual-policy parser](https://github.com/tiann/KernelSU/blob/2697f36fc8ec10ab73e97ec1724e0f3212116ba2/kernel/feature/selinux_hide.c#L603-L768) duplicates the input and resolves both sets of user, role and type symbols. The invalid-type candidate fails before MLS and SID registration.
+- PoC verification: controlled physical-device Hide OFF/ON measurements with the standalone preload-parent PoC previously produced six valid OFF runs (paired medians −157 to −53 ns) and seven valid ON runs (+53 to +157 ns). Each run accepted 512 pairs without CPU migration; 94/96 OFF blocks were negative and 109/112 ON blocks were positive. These data validate that PoC on the tested configuration, **not** the Duck disposable-child collector or its end-to-end detection rate.
+- Duck physical-device follow-up (2026-10-20, earlier failing installation): repeated scans with hiding enabled frequently returned **no timing measurement**. The dedicated App Zygote carrier binding dies before replying; controlled attr/current writes become unsupported, AVC counters remain uncollected, and the timing row reports `Timing unavailable` with `0/0` pairs, `N/A` medians and no parent sample. System logs for a reproduced failure show `ZygoteStartFailedEx: Error connecting to zygote`, caused by `java.io.IOException: Connection refused` while `ZygoteProcess.openZygoteSocketIfNeeded` tried to connect. This is an observed end-to-end **missed detection / false-negative coverage failure**, not evidence that A−B is zero or that hiding is absent. The underlying reason for the rejected Zygote socket connection and an empirical miss rate remain unverified.
+- Interpretation: the current consistency gates above classify timing direction only. Incomplete or malformed parent samples cannot establish a direction; missing/legacy parent records are unavailable. A failure in the later AVC child does not erase a completed parent sample. Positive and negative directions are informational and cannot establish hiding or a clean environment.
+- Limitations: the 16 blocks all come from one child in one retained preload; they are not 16 independent carriers. Stock GKI does not guarantee negative timing, because the relative costs of SID parsing vs credential construction vary with caches, scheduler, CPU and OEM. This finding is a conditional and device-calibrated anomaly, NOT direct proof of KernelSU/root. The AVC and timing rows share the same sample/mechanism and are not independent detections.
+- Collection regression checks (2026-10-20): failed or incomplete disposable-child runs skip the optional parent diagnostic rather than replaying the failing syscalls in the carrier. An affinity change after a complete timing run keeps all 512 pairs and medians through native/Kotlin/carrier serialization; the later counter failure is reported separately. Host regressions cover these cases; subsequent physical-device results and the remaining startup limitation are recorded below.
+
+#### Physical-device collection retest after the fixes (2026-10-20)
+
+The rebuilt original-package APK was installed and its on-device SHA-256 matched
+`153a2e08446fbdf0437042e5ecc2780bb760c69856be7fafed17b9ea5d6fe74f`.
+Two scans still returned unavailable: the framework tried to connect to an existing
+`ChildZygoteProcess` and received `Connection refused`, without a new Duck preload trace.
+This remains an original-package collection failure; the two code fixes alone did not
+recover that system-side startup state. Why the original carrier first exited is unverified.
+
+A same-code diagnostic build with a different application ID produced three fresh
+preload parents, with distinct parent/child PIDs. The existing kernel `selinux_hide`
+feature was enabled; neither it nor the application's hiding configuration was changed.
+
+| Fresh preload | Child paired median A−B | Parent paired median A−B | Pairs per process | CPU migrations | AVC rounds |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 573 ns | 624 ns | 512 | 0 | 4 |
+| 2 | 677 ns | 625 ns | 512 | 0 | 4 |
+| 3 | 990 ns | 573 ns | 512 | 0 | 4 |
+
+All processes measured CPU 0. Each child had 16 positive block medians and a majority
+of A-slower pairs (442, 480 and 478 of 512), so all three retained timing rows were
+positive. A second scan of each carrier returned the same retained sample; these are
+three independent preloads, not six independent measurements. Parent measurements
+remained diagnostic only. This is a collection and retained-export control, not an
+OFF/ON sensitivity study. The changed package/UID and possible per-package hook
+differences prevent using its success to claim the original package's startup problem
+is fixed. Temporary diagnostic packages were removed without clearing the original
+application's data. A later package installation changed the original package's
+installed APK hash after this test; results here apply to the verified hash above,
+not to that subsequent installation.
+
+#### Original-package trace build and strict retest (2026-10-20)
+
+The trace APK kept application ID `com.eltavine.duckdetector`. Its installed SHA-256
+was `c3b547e27a8ed6331bcf7bf54e5f2994d2708dde2b9e5aff1e1a2ec7ede3cac8`
+before and after five force-stop/start rounds on the physical device. Each round
+ran two scans. Instrumentation explicitly required complete child and parent
+512-pair samples, valid child medians, zero child migrations and a positive timing
+verdict; unavailable exports could not pass. All ten scans passed. Each round
+created a distinct preload parent and child; its second scan reused that snapshot.
+
+| Round | Parent PID | Child PID | Child paired median A−B (ns) | Parent paired median A−B (ns) |
+| --- | --- | --- | --- | --- |
+| 1 | 10276 | 10296 | 834 | 573 |
+| 2 | 10542 | 10568 | 833 | 573 |
+| 3 | 11159 | 11178 | 573 | 573 |
+| 4 | 11509 | 11528 | 625 | 573 |
+| 5 | 11757 | 11779 | 573 | 521 |
+
+All five children collected four AVC rounds and 16 positive timing blocks on CPU 0;
+both parent and child had zero migrations. Each service connected and returned its
+Binder snapshot. A transient framework `Connection refused` retry preceded successful
+preload startup, so that line alone does not establish a failed collection.
+Logging covers bind callbacks, cancellation/cleanup, service transactions, preload
+entry and child/parent collection boundaries, outside the measured write loops.
+
+This does not prove recovery of the earlier failing state: the package's observed
+UID changed from 10527 during the refused cached-carrier runs to 10625 before this
+retest. This testing did not rename or uninstall the original package, clear its
+data, reboot, or change hiding settings. UID and APK remained unchanged during the
+five rounds. The old carrier's initial death and the reason its stale framework
+state persisted remain unverified. These are five successful independent preloads,
+not an OFF/ON study or proof that missed detections are eliminated.
+
 ### Controlled attr/current recognition and ordinary-app timing
+
+#### PoC-parent parity and CPU-dependent counterexample (2026-10-21)
+
+The original package was updated in place (UID 10625 retained; no data clear,
+package rename, Hide toggle or reboot). The rebuilt native parent collector used
+the standalone PoC's unpinned parent, B/A preflight, O2 code generation, RAW-clock
+write bracketing, 32 warmup pairs, 512 alternating AB/BA pairs and lower paired
+median. Child timing remained separately pinned to CPU0 and diagnostic only.
+
+On the physical device with the locally modified kernel, a complete parent sample
+on CPU1 reported A=2864 ns, B=2657 ns, paired A−B=+209 ns (403/512 A slower,
+16/16 positive blocks). Fresh parent runs on CPU1 then yielded +312 ns and
++261 ns; a CPU2 run gave +260 ns with one migrated pair (511/512 accepted,
+invalid for classification). The pinned child stayed positive. The unchanged
+standalone PoC, launched as its own fresh App Zygote, reported −52 ns on CPU5
+and −261 ns on CPU3, both with 512/512 accepted pairs and zero migrations.
+The latter CPU3 run measured median A=937 ns and B=1250 ns. Device CPU maximum
+frequencies place CPU0–2 at 2016 MHz, CPU3–6 at 2803.2 MHz and CPU7 at
+3187.2 MHz. This is a direct opposite-sign result across CPU performance
+classes, not a demonstrated arithmetic or parent/child PID decoding error.
+
+**Root cause and in-place correction:** the first attempted PoC alignment still
+ran the full AVC disposable child BEFORE measuring the preload parent. This
+included 32,768 counted writes and the child's own pinned timing, which changed
+the workload/scheduler state before the parent sample. In a diagnostic build
+that measured the parent first, independent parents on CPU7 and CPU4 both
+reported paired A−B=−52 ns (512 pairs, zero migrations), matching the standalone
+PoC. The final implementation adds a lightweight disposable child *before*
+the parent, verifying carrier identity, enforcing state, same-FD B/A EINVAL
+rejections and unchanged context. On success the native parent collects its
+PoC-equivalent 512 pairs *before* the full AVC workload; failure, timeout,
+seccomp trap, malformed reply or identity change cannot authorize a parent
+measurement. The full AVC child still runs afterward and an invalid result
+cannot contribute a timing verdict.
+
+Four successive in-place physical-device runs of that final safe ordering
+each created a fresh preload parent (PIDs 2687, 3153, 3453, 3723), sampled
+CPU7 without migration, retained 512/512 pairs with paired A−B=−52 ns and
+passed the instrumentation assertion requiring a NEGATIVE timing verdict.
+The original application ID and UID 10625 remained unchanged; no data clear,
+Hide toggle or reboot occurred. At that revision, Danger still applied to a positive complete
+PoC-compatible parent median, and the pinned child's timing was diagnostic only.
+Host JVM and native regression tests cover malformed/failed controls and
+positive-child/negative-parent conflict. This resolves the reproduced in-place
+false positive in these tests, not all possible CPU/load combinations. The
+previous CPU0–2 positive measurements remain a documented counterexample;
+matched per-CPU Hide OFF/ON controls and the exact modified-kernel diff are
+still needed to establish generalizable detection specificity.
+
 
 - Observable signal: repeated candidate-context refusal classes with preceding/following malformed and stock controls in the app_zygote child, plus the existing ordinary-app paired timing samples.
 - Producing subsystem: procfs and SELinux context conversion/permission checks; the capability owns controlled writes, while this feature owns ordinary-app timing and evidence interpretation.
