@@ -99,6 +99,49 @@ false-positive rate or coverage of all Android kernels is claimed.
 - Result states: A≈1/B≈1, A≈1/B≈2, A≈2/B≈2, unclassified (typed as `SelinuxAvcLookupProfile`); not collected, timing only, permission limited, unsupported, unavailable, inconclusive (`SelinuxAvcLookupCollection`).
 - Interpretation: informational only. A≈1/B≈2 and A≈2/B≈2 add one informational impact line; every reading stays an informational method row and never changes the card's status, verdict or summary, and A≈1/B≈1 is shown as not clean. This shares the attr/current path with the controlled context-write and timing observations and is not counted as an independent root indicator.
 
+### App Zygote invalid-context timing (experimental)
+
+Current contract: a lightweight disposable child verifies the B/A EINVAL controls
+before the unpinned preload parent collects 32 warmup and 512 AB/BA pairs. The full
+pinned AVC child runs afterward. The parent accepts only pairs whose sampled CPU
+endpoints both equal its entry CPU; this also rejects a move between pairs without
+changing affinity. Endpoint checks cannot detect an unobserved move away and back.
+A completed parent sample is retained even if the later optional AVC child fails.
+Its own errors, identity checks, medians and completion state determine usability.
+
+Timing direction is informational only. A positive direction requires a positive
+paired lower median, at least 12/16 positive blocks and more than 256 A-slower
+pairs. A negative direction requires a negative paired lower median, at least
+12/16 negative blocks and at most 256 A-slower pairs. Other complete samples are
+inconclusive; missing and legacy parent samples are unavailable. These consistency
+gates are diagnostic conventions, not calibrated statistical significance tests.
+Neither direction changes the card's integrity status or sets `isSecure`.
+Stock GKI already parses A but skips B before credential allocation, so it supplies
+no guaranteed timing sign. Observed cross-CPU direction changes reinforce that
+limitation. No matched stock/OEM/kernel calibration is available to justify a
+universal positive-sign hiding verdict.
+
+The preflight limits obvious fault/permission failures to a disposable child; it
+does not prove that an arbitrary modified handler will behave identically in the
+live parent. Parent writes are synchronous and have no interruptible syscall
+deadline. The host acquisition and bootstrap tests target the standard unminified debug APK.
+A minified release instrumentation target needs its own reviewed test/keep-rule
+setup; copying duplicate runtime JARs into every test classpath is not used.
+No new physical-device measurements accompany the current consistency
+and evidence-retention changes; host/JVM tests validate their control flow only.
+
+- Observable signal: 512 alternating AB/BA timings in the actual preload parent, after 32 warmup pairs and a disposable-child preflight, before the full AVC workload. A is the deliberately invalid type `u:r:__selinux_hide_probe_invalid__:s0`; B changes only its first byte to a newline. Every write must fail with EINVAL. `CLOCK_MONOTONIC_RAW` brackets each write separately; even-sized medians use the lower-middle element `(n - 1) / 2`. PID, observed CPU endpoints, paired median, A-slower count and sixteen ordered block medians are retained. The later pinned child's independent timings and counters remain diagnostic; partial samples retain medians without becoming a completed measurement.
+- Producing subsystem: App Zygote preload, procfs attr/current, the SELinux LSM context parser and scheduler/clock observations.
+- Mechanism: equal-length invalid-type and newline-prefixed writes exercise different stock paths; an altered dual-policy parser can change their relative cost. EINVAL controls, unchanged parent identity, 512 complete same-observed-CPU pairs and block consistency limit which samples expose a direction. They do not attribute its cause.
+- References: [ZygotePreload API](https://developer.android.com/reference/android/app/ZygotePreload); ACK [android13-5.15-2025-01_r1 hooks.c](https://android.googlesource.com/kernel/common/+/refs/tags/android13-5.15-2025-01_r1/security/selinux/hooks.c) (`selinux_setprocattr`), and the KernelSU source revision linked below. The stock source converts A before credential allocation but skips conversion for B, so no timing-sign guarantee follows from these paths.
+- Applicability: API >=29, application UID >=10000, app_zygote context with a field-bounded optional MLS category suffix, readable enforcing state and EINVAL controls. Collection changes no affinity; sampled endpoints must remain on the entry CPU. The cited GKI 5.15 comparison and device measurements do not certify other OEMs, kernel revisions or CPU classes.
+- Visibility limits: scheduling, power state, caching and OEM policy/implementation can change costs. Sampled CPU endpoints cannot observe a migration away and back between reads. The synchronous parent syscall has no interruptible timeout; a successful child preflight cannot prove identical handling in every modified kernel. AVC counters and timing share a carrier and are not independent root evidence.
+- Result states: positive direction, negative direction, inconclusive, unavailable; all are informational. Missing and legacy parent records cannot become measured negatives. Later child counter failures retain the separate completed parent evidence.
+- Provenance: [GKI 5.15 hooks.c](https://github.com/aosp-mirror/kernel_common/blob/android13-5.15-2025-01_r1/security/selinux/hooks.c#L6542-L6684) first checks PROCESS__SETCURRENT. A fails during the invalid-type SID conversion, while B skips conversion then runs prepare_creds and abort_creds because its SID is zero; [GKI 5.15 cred.c](https://github.com/aosp-mirror/kernel_common/blob/android13-5.15-2025-01_r1/kernel/cred.c#L255-L303) shows allocation, copying and LSM preparation. [KernelSU #3877 / 2697f36f](https://github.com/tiann/KernelSU/blob/2697f36fc8ec10ab73e97ec1724e0f3212116ba2/kernel/feature/selinux_hide.c#L232-L310) retains the early AVC check while [its dual-policy parser](https://github.com/tiann/KernelSU/blob/2697f36fc8ec10ab73e97ec1724e0f3212116ba2/kernel/feature/selinux_hide.c#L603-L768) duplicates the input and resolves both sets of user, role and type symbols. The invalid-type candidate fails before MLS and SID registration.
+- Interpretation: the current consistency gates above classify timing direction only. Incomplete or malformed parent samples cannot establish a direction; missing/legacy parent records are unavailable. A failure in the later AVC child does not erase a completed parent sample. Positive and negative directions are informational and cannot establish hiding or a clean environment.
+- Limitations: the 16 blocks come from one parent sample in one retained preload; they are not independent carriers. Stock GKI supplies no guaranteed sign, and complete samples have changed direction across CPUs and workload order. Scheduling, caches and OEM behavior can therefore dominate the observation. Timing and AVC results share the same kernel path and are not independent evidence.
+- Validation: host-native and JVM regressions cover preflight failures, CPU changes, incomplete samples, serialization and retention when child collection fails. Limited physical-device testing exposed both carrier startup failures and CPU-dependent directions. Matched stock/modified measurements across devices remain required before assigning detection significance.
+
 ### Controlled attr/current recognition and ordinary-app timing
 
 - Observable signal: repeated candidate-context refusal classes with preceding/following malformed and stock controls in the app_zygote child, plus the existing ordinary-app paired timing samples.
@@ -108,7 +151,7 @@ false-positive rate or coverage of all Android kernels is claimed.
 - Applicability: determined by source mechanisms and runtime controls, not package or KernelSU version strings. SELinux hiding is optional; a hidden backup policy can suppress recognized live types. Source-derived coverage is separated below; it has not been established by paired device measurements.
 - Visibility limits: a failed carrier, SETCURRENT denial, open error or missing control cannot become a positive or negative integrity finding. Legacy uncontrolled records are informational. A stable timing difference does not prove a hook or identify KernelSU; earlier hook implementations can have no A/B difference. Shared SELinux mechanisms are not independent root indicators.
 - Result states: context recognized, tested contexts not recognized, permission limited, unsupported, unavailable, inconclusive (typed as `SelinuxProcAttrCurrentVerdict`); experimental timing candidate, no reproducible asymmetry, unavailable.
-- Interpretation: a controlled positive context-recognition result remains a warning. A reproducible ordinary-app timing candidate is Danger in the overall card, method row and impact text, reflecting a strong device-validated side-channel anomaly (Hide ON/OFF/ON on the validation device), not universal KernelSU identification or root proof. Existing independent Danger findings retain verdict precedence; the timing Danger must not be masked by an unrelated warning. No negative observation implies absence of KernelSU or policy modifications: "tested contexts not recognized" and every failed collection state add one informational impact line that says so, and the raw per-write record stays in the method row.
+- Interpretation: a controlled positive context-recognition result remains a warning. The existing ordinary-app timing candidate retains its separate Danger policy; App Zygote timing direction is informational and does not change integrity status. Neither identifies KernelSU or proves root. No negative observation implies absence of KernelSU or policy modifications: "tested contexts not recognized" and every failed collection state add one informational impact line that says so, and the raw per-write record stays in the method row.
 
 | KernelSU source interval / configuration | Source-derived expectation for retained probes |
 | --- | --- |

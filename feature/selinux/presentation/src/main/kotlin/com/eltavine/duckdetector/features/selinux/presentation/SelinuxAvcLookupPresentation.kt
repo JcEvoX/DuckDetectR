@@ -23,10 +23,56 @@ import com.eltavine.duckdetector.features.selinux.domain.SelinuxAvcLookupReading
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxCheckResult
 import com.eltavine.duckdetector.features.selinux.presentation.model.SelinuxDetailRowModel
 import java.util.Locale
+import com.eltavine.duckdetector.core.evidence.DetectorStatus
+import com.eltavine.duckdetector.core.evidence.InfoKind
 
 internal const val AVC_EXTRA_LOOKUP_IMPACT =
     "Rejected app_zygote attr/current writes repeatedly cost an extra AVC lookup. The per-CPU counter is shared " +
         "and does not show which code queried it; this is supporting evidence, not tool identification or root proof."
+
+internal fun appZygoteTimingRow(result: SelinuxCheckResult): SelinuxDetailRowModel {
+    val reading = requireNotNull(result.avcLookup)
+    val verdict = reading.timingVerdict
+    val medians = reading.timingMediansAvailable
+    val parent = reading.parentTiming
+    fun measured(value: Long): String = if (medians) "$value ns" else "N/A"
+    val missingEvidence = reading.details.failureReason?.takeIf {
+        reading.collection != SelinuxAvcLookupCollection.COLLECTED &&
+            reading.collection != SelinuxAvcLookupCollection.TIMING_ONLY
+    }
+    return SelinuxDetailRowModel(
+        label = result.method,
+        value = verdict.label,
+        status = DetectorStatus.info(InfoKind.SUPPORT),
+        detail = (missingEvidence?.let { "Collection failed: $it (AVC child).\n" } ?: "") +
+            (if (!parent.attempted) "No parent timing sample was collected; this is not a negative detection.\n" else "") +
+            "A=invalid type, B=same-length newline prefix; both must return EINVAL. " +
+            "512 AB/BA pairs, 32 warmups; CLOCK_MONOTONIC_RAW; direction requires a nonzero paired median " +
+            "and at least 12/16 agreeing blocks; positive timing also requires a majority of A-slower pairs. " +
+            "Measured in the preload parent without changing CPU affinity. " +
+            "A change from the entry CPU at any sampled endpoint or an incomplete sample invalidates classification. " +
+            "One retained preload is one measurement.\n" +
+            (if (parent.attempted) "Parent preload (PID=${parent.pid}, entry CPU=${parent.cpu}): " +
+                "A−B=${parent.medianDeltaNs?.let { "$it ns" } ?: "N/A"}; " +
+                "A=${parent.medianANs?.let { "$it ns" } ?: "N/A"}, " +
+                "B=${parent.medianBNs?.let { "$it ns" } ?: "N/A"}; " +
+                "A slower=${parent.aSlower}/${parent.pairs}; " +
+                "blocks positive/negative/zero=${parent.positiveBlocks}/${parent.negativeBlocks}/${parent.zeroBlocks}; " +
+                "migrations=${parent.migrations}; complete=${parent.complete}; errno=${parent.error}. " +
+                (if (parent.protocol == 1) "This parent sample supplies the timing verdict. "
+                 else "Legacy pinned parent diagnostic; unavailable for PoC classification. ") +
+                (if (!parent.complete) "Partial-sample medians are diagnostic only. " else "")
+            else "Parent preload: N/A (not collected). ") +
+            "\nPinned child diagnostic (PID=${reading.details.childPid}, CPU=${reading.details.cpu}): " +
+            "paired A−B=${measured(reading.medianDeltaNs)}; A=${measured(reading.medianANs)}, " +
+            "B=${measured(reading.medianBNs)}; A slower=${reading.aSlower}/${reading.pairs}; " +
+            "blocks positive/negative/zero=${reading.positiveBlocks}/${reading.negativeBlocks}/${reading.zeroBlocks}; " +
+            "CPU migrations=${reading.cpuMigrations}; collection=${reading.collection.label}. " +
+            "Child timing is diagnostic only and never replaces the parent sample. " +
+            "Stock A and B already take different kernel paths. Timing direction is supporting information, " +
+            "not proof of hiding, a specific root tool, or a clean environment.",
+    )
+}
 
 internal fun avcLookupRow(result: SelinuxCheckResult): SelinuxDetailRowModel {
     val reading = requireNotNull(result.avcLookup)
@@ -37,6 +83,10 @@ internal fun avcLookupRow(result: SelinuxCheckResult): SelinuxDetailRowModel {
         status = reading.status,
         detail = buildString {
             append(avcLookupExplanation(reading))
+            if (reading.collection != SelinuxAvcLookupCollection.COLLECTED &&
+                reading.collection != SelinuxAvcLookupCollection.TIMING_ONLY &&
+                reading.details.failureReason != null
+            ) append(" Collection failed: ${reading.details.failureReason}. This is not a negative detection.")
             append(" Captured during app_zygote preload; this is a retained measurement, not a live check.")
             append("\nStep=${details.step}; errno=${details.errno}; child=${details.childEnd}, ")
             append("exit=${details.childExitStatus}, signal=${details.childSignal}, errno=${details.childErrno}")
@@ -48,9 +98,15 @@ internal fun avcLookupRow(result: SelinuxCheckResult): SelinuxDetailRowModel {
             append("B batches=${reading.batchesB.joinToString()}")
             reading.rateA?.let { append("; A rate=${String.format(Locale.ROOT, "%.3f", it)}") }
             reading.rateB?.let { append("; B rate=${String.format(Locale.ROOT, "%.3f", it)}") }
-            append(".\nTiming over ${reading.pairs} pairs: median A=${reading.medianANs} ns, ")
-            append("B=${reading.medianBNs} ns, paired A−B=${reading.medianDeltaNs} ns. ")
-            append("The stock handler already converts A and skips B, so timing is not interpreted.")
+            append(".\nTiming over ${reading.pairs} pairs: median A=")
+            append(if (reading.timingMediansAvailable) "${reading.medianANs} ns" else "N/A")
+            append(", B=")
+            append(if (reading.timingMediansAvailable) "${reading.medianBNs} ns" else "N/A")
+            append(", paired A−B=")
+            append(if (reading.timingMediansAvailable) "${reading.medianDeltaNs} ns" else "N/A")
+            append(". ")
+            append("The separate App Zygote timing row interprets a validated 512-pair sample; " +
+                "the AVC profile still uses child counts only.")
             details.failureReason?.let { append("\n$it") }
         },
     )

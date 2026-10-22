@@ -80,9 +80,11 @@ dependencies {
     testImplementation(libs.bundles.test.unit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(project(":core:report"))
+    androidTestImplementation(project(":feature:selinux:domain"))
     androidTestImplementation(project(":feature:rootmanagers:data"))
     androidTestImplementation(project(":feature:rootmanagers:domain"))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.tracing)
     debugImplementation(libs.androidx.ui.tooling)
 }
