@@ -67,6 +67,18 @@ class LocationRiskRuntimeTest {
         val failed = LocationContractCollector { throw IllegalStateException("fixture") }.collect()
         assertTrue(failed.filter { it.state != LocationState.UNSUPPORTED }.all { it.state == LocationState.UNAVAILABLE })
     }
+    @Test fun laterGetterFailurePreservesEarlierContractMismatch() {
+        val checks = LocationContractCollector { provider ->
+            object : Location(provider) {
+                override fun getLatitude() = 45.125
+                override fun getLongitude(): Double = throw IllegalStateException("fixture")
+            }
+        }.collect()
+        val values = checks.first { it.contract == LocationContract.VALUES }
+        assertEquals(LocationState.OBSERVED, values.state)
+        assertEquals(setOf(LocationField.LATITUDE), values.mismatches)
+        assertEquals(LocationFailure.PLATFORM_FAILURE, values.failure)
+    }
     @Test fun disabledCacheNeverChecksPermissionOrQueriesService() {
         val inaccessible = object : ContextWrapper(context) {
             override fun checkSelfPermission(permission: String): Int = error("must not check")
@@ -92,6 +104,15 @@ class LocationRiskRuntimeTest {
             val granted = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
             assertEquals(if (granted) LocationState.OBSERVED else LocationState.PERMISSION_LIMITED, report.cache?.state)
             assertTrue(report.cache!!.samples.size <= 3)
+            if (granted) {
+                assertEquals(3, report.cache!!.samples.size)
+                if (Build.VERSION.SDK_INT == 29 && context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    assertEquals(LocationPermission.APPROXIMATE, report.cache!!.permission)
+                    report.cache!!.samples.filter { it.provider != CachedProvider.NETWORK }.forEach {
+                        assertEquals(it.toString(), LocationState.PERMISSION_LIMITED, it.state)
+                    }
+                }
+            }
         } finally {
             store.decide(false)
         }

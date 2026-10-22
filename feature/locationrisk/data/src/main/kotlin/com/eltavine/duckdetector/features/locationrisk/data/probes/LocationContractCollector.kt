@@ -20,28 +20,40 @@ package com.eltavine.duckdetector.features.locationrisk.data.probes
 import android.location.Location
 import android.os.Build
 import com.eltavine.duckdetector.features.locationrisk.domain.*
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Only app-owned synthetic objects; no provider, service, real fix, hidden API or permission. */
 internal class LocationContractCollector(private val createLocation: (String) -> Location = ::Location) {
     fun collect(): List<LocationContractCheck> = LocationContract.entries.map { contract ->
         if (contract == LocationContract.MOCK_FLAG && Build.VERSION.SDK_INT < 31) {
             LocationContractCheck(contract, LocationState.UNSUPPORTED)
-        } else try {
+        } else {
             val mismatches = linkedSetOf<LocationField>()
-            repeat(2) { index ->
-                val location = createLocation("duckdetector_test_$index")
-                when (contract) {
-                    LocationContract.VALUES -> checkValues(location, index, mismatches)
-                    LocationContract.OPTIONAL_FIELDS -> checkFlags(location, mismatches)
-                    LocationContract.RESET -> checkReset(location, mismatches)
-                    LocationContract.MOCK_FLAG -> if (Build.VERSION.SDK_INT >= 31) checkMock(location, mismatches)
+            val failure = try {
+                repeat(2) { index ->
+                    val location = createLocation("duckdetector_test_$index")
+                    when (contract) {
+                        LocationContract.VALUES -> checkValues(location, index, mismatches)
+                        LocationContract.OPTIONAL_FIELDS -> checkFlags(location, mismatches)
+                        LocationContract.RESET -> checkReset(location, mismatches)
+                        LocationContract.MOCK_FLAG -> if (Build.VERSION.SDK_INT >= 31) checkMock(location, mismatches)
+                    }
                 }
+                null
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: SecurityException) {
+                LocationFailure.ACCESS_DENIED
+            } catch (_: RuntimeException) {
+                LocationFailure.PLATFORM_FAILURE
             }
-            LocationContractCheck(contract, if (mismatches.isEmpty()) LocationState.NOT_OBSERVED else LocationState.OBSERVED, mismatches)
-        } catch (_: SecurityException) {
-            LocationContractCheck(contract, LocationState.PERMISSION_LIMITED, failure = LocationFailure.ACCESS_DENIED)
-        } catch (_: RuntimeException) {
-            LocationContractCheck(contract, LocationState.UNAVAILABLE, failure = LocationFailure.PLATFORM_FAILURE)
+            val state = when {
+                mismatches.isNotEmpty() -> LocationState.OBSERVED
+                failure == LocationFailure.ACCESS_DENIED -> LocationState.PERMISSION_LIMITED
+                failure != null -> LocationState.UNAVAILABLE
+                else -> LocationState.NOT_OBSERVED
+            }
+            LocationContractCheck(contract, state, mismatches, failure)
         }
     }
 

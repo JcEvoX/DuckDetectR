@@ -28,6 +28,10 @@ class LocationRiskCardModelMapperTest {
     @Test fun `empty checks say not evaluated`() {
         assertEquals("Local contracts not evaluated", mapper.map(ready()).verdict)
     }
+    @Test fun `missing package context never claims visibility was observed`() {
+        val rows = mapper.map(ready()).sections.single { it.key == "package" }.rows
+        assertTrue(rows.all { it.value == "Unavailable" })
+    }
     @Test fun `App and SDK export share verdict and severity`() {
         val report = ready().copy(contracts = listOf(LocationContractCheck(
             LocationContract.VALUES, LocationState.OBSERVED, setOf(LocationField.LATITUDE),
@@ -65,6 +69,42 @@ class LocationRiskCardModelMapperTest {
         assertTrue(details.contains("identity unverified"))
         assertTrue(details.contains("caller user/profile"))
         assertEquals(DetectionSeverity.INFO, model.headerFacts[2].status.severity)
+    }
+    @Test fun `one unmarked cache cannot hide denied providers`() {
+        val model = mapper.map(ready().copy(cache = CachedLocationContext(LocationState.OBSERVED,
+            samples = listOf(
+                CachedLocationCheck(CachedProvider.GPS, LocationState.PERMISSION_LIMITED, failure = LocationFailure.ACCESS_DENIED),
+                CachedLocationCheck(CachedProvider.NETWORK, LocationState.NOT_OBSERVED, false, CacheAge.RECENT),
+                CachedLocationCheck(CachedProvider.PASSIVE, LocationState.PERMISSION_LIMITED, failure = LocationFailure.ACCESS_DENIED),
+            ),
+        )))
+        assertEquals("Inconclusive", model.headerFacts[1].value)
+        assertTrue(model.sections.single { it.key == "cache" }.rows.any { it.value == "Permission limited" })
+    }
+    @Test fun `partial local failures remain visible in verdict and export`() {
+        val checks = LocationContract.entries.map { contract ->
+            if (contract == LocationContract.RESET) LocationContractCheck(contract, LocationState.UNAVAILABLE, failure = LocationFailure.PLATFORM_FAILURE)
+            else LocationContractCheck(contract, LocationState.NOT_OBSERVED)
+        }
+        val model = mapper.map(ready().copy(contracts = checks))
+        assertEquals("Local contracts partially evaluated", model.verdict)
+        assertEquals(model.verdict, model.toDetectorReport().verdict)
+        assertEquals("Inconclusive", model.headerFacts[0].value)
+    }
+    @Test fun `pre31 unsupported mock round trip does not hide completed local checks`() {
+        val checks = LocationContract.entries.map { contract -> LocationContractCheck(contract,
+            if (contract == LocationContract.MOCK_FLAG) LocationState.UNSUPPORTED else LocationState.NOT_OBSERVED,
+        ) }
+        assertEquals("No local contract mismatch observed", mapper.map(ready().copy(contracts = checks)).verdict)
+    }
+    @Test fun `mock evidence and freshness failures both survive export`() {
+        val model = mapper.map(ready().copy(cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
+            CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, true, ageFailure = LocationFailure.PLATFORM_FAILURE),
+        ))))
+        assertEquals("Observed", model.headerFacts[1].value)
+        val rows = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Rows>().flatMap { it.rows }
+        assertTrue(rows.any { it.label == "GPS mock marker" && it.value == "Observed" })
+        assertTrue(rows.any { it.label == "GPS freshness" && it.detail?.contains("Platform query failed") == true })
     }
     private fun ready() = LocationRiskReport(LocationRiskStage.READY)
 }

@@ -27,6 +27,9 @@ class LocationRiskCardModelMapper {
         val mismatches = report.contracts.count { it.state == LocationState.OBSERVED }
         val mockSamples = report.cache?.samples.orEmpty().count { it.mockMarked == true }
         val ready = report.stage == LocationRiskStage.READY
+        val partialContracts = report.contracts.any {
+            it.state == LocationState.UNAVAILABLE || it.state == LocationState.PERMISSION_LIMITED || it.state == LocationState.INCONCLUSIVE
+        }
         return LocationRiskCardModel(
             title = "Location Risk",
             subtitle = "Location API contracts and optional cached mock metadata",
@@ -35,6 +38,7 @@ class LocationRiskCardModelMapper {
                 report.stage == LocationRiskStage.LOADING -> "Scanning"
                 report.stage == LocationRiskStage.FAILED -> "Scan failed"
                 mismatches > 0 -> "Location contract mismatch observed"
+                partialContracts && report.contracts.any { it.state == LocationState.NOT_OBSERVED } -> "Local contracts partially evaluated"
                 report.contracts.any { it.state == LocationState.NOT_OBSERVED } -> "No local contract mismatch observed"
                 else -> "Local contracts not evaluated"
             },
@@ -42,7 +46,7 @@ class LocationRiskCardModelMapper {
                 "Local contract checks can reveal broad getter rewrites. Cached mock flags and installed packages are context; none authenticates the device's real position.",
             headerFacts = listOf(
                 row("Local contracts", if (!ready || report.contracts.isEmpty()) LocationState.UNAVAILABLE else
-                    if (mismatches > 0) LocationState.OBSERVED else if (report.contracts.any { it.state == LocationState.UNAVAILABLE || it.state == LocationState.PERMISSION_LIMITED }) LocationState.INCONCLUSIVE else LocationState.NOT_OBSERVED,
+                    if (mismatches > 0) LocationState.OBSERVED else if (partialContracts) LocationState.INCONCLUSIVE else LocationState.NOT_OBSERVED,
                     "Four contracts share one framework surface; they are not independent trust sources.", warning = mismatches > 0),
                 row("Cached mock marks", if (mockSamples > 0) LocationState.OBSERVED else cacheMockState(report.cache),
                     "Historical cached fixes only; false does not authenticate a position."),
@@ -54,7 +58,7 @@ class LocationRiskCardModelMapper {
             sections = if (!ready) emptyList() else listOf(
                 LocationRiskSectionModel("contracts", "App-owned Location contracts", report.contracts.map { check ->
                     row(contractLabel(check.contract), check.state,
-                        "Two synthetic objects; no real fix. Fields: ${check.mismatches.joinToString().ifEmpty { "none" }}. ${failureDetail(check.failure)}" +
+                        "Up to two synthetic objects; no real fix. Fields: ${check.mismatches.joinToString().ifEmpty { "none" }}. ${failureDetail(check.failure)}" +
                             if (check.contract == LocationContract.MOCK_FLAG) " Public setMock requires API 31; older releases are unsupported." else "",
                         warning = check.state == LocationState.OBSERVED, failure = check.failure)
                 }),
@@ -62,7 +66,7 @@ class LocationRiskCardModelMapper {
                 LocationRiskSectionModel("package", "Reference project package", listOf(
                     row("VirtualLocation package", report.installedPackage?.state ?: LocationState.UNAVAILABLE,
                         "com.vincenthzr.locationspoofer; source revision dcbe6203; identity unverified. No upstream release signer was established; no name-based matching. Installed does not mean enabled or running."),
-                    row("Package visibility", if (report.installedPackage?.failure == null) LocationState.OBSERVED else report.installedPackage?.state ?: LocationState.UNAVAILABLE,
+                    row("Package visibility", report.installedPackage?.let { if (it.failure == null) LocationState.OBSERVED else it.state } ?: LocationState.UNAVAILABLE,
                         "${report.installedPackage?.visibility ?: "UNKNOWN"}; caller user/profile only. Not observed does not mean globally uninstalled.", failure = report.installedPackage?.failure),
                 )),
                 LocationRiskSectionModel("scope", "Coverage and privacy", listOf(
@@ -83,9 +87,10 @@ class LocationRiskCardModelMapper {
         cache?.samples.orEmpty().forEach { sample ->
             add(row("${sample.provider} mock marker", sample.state,
                 "Age bucket: ${sample.age}; cached metadata only, not current service state. ${failureDetail(sample.failure)}", failure = sample.failure))
-            if (sample.mockMarked != null && (sample.age == CacheAge.FUTURE || sample.age == CacheAge.UNKNOWN || sample.age == CacheAge.STALE)) {
+            if (sample.ageFailure != null || sample.mockMarked != null && (sample.age == CacheAge.FUTURE || sample.age == CacheAge.UNKNOWN || sample.age == CacheAge.STALE)) {
                 add(row("${sample.provider} freshness", LocationState.INCONCLUSIVE,
-                    "${sample.age}; recent means at most five minutes, a display policy rather than proof of authenticity. No cross-provider contradiction rule."))
+                    "${sample.age}; recent means at most five minutes, a display policy rather than proof of authenticity. No cross-provider contradiction rule. ${failureDetail(sample.ageFailure)}",
+                    failure = sample.ageFailure))
             }
         }
     }
@@ -93,6 +98,7 @@ class LocationRiskCardModelMapper {
     private fun cacheMockState(cache: CachedLocationContext?): LocationState = when {
         cache == null -> LocationState.UNAVAILABLE
         cache.state != LocationState.OBSERVED -> cache.state
+        cache.samples.any { it.mockMarked == false } && cache.samples.any { it.mockMarked == null } -> LocationState.INCONCLUSIVE
         cache.samples.any { it.mockMarked == false } -> LocationState.NOT_OBSERVED
         else -> LocationState.UNAVAILABLE
     }

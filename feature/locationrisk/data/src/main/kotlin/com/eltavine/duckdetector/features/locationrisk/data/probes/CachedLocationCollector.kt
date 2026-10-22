@@ -21,9 +21,9 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
-import android.os.Build
 import android.os.SystemClock
 import com.eltavine.duckdetector.features.locationrisk.domain.*
+import kotlin.coroutines.cancellation.CancellationException
 
 internal class CachedLocationCollector(private val context: Context) {
     fun collect(enabled: Boolean): CachedLocationContext {
@@ -43,6 +43,8 @@ internal class CachedLocationCollector(private val context: Context) {
             val locationEnabled = manager.isLocationEnabled
             val samples = CachedProvider.entries.map { read(manager, it) }
             CachedLocationContext(LocationState.OBSERVED, permission, locationEnabled, samples, sampledAt)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (_: SecurityException) {
             CachedLocationContext(LocationState.PERMISSION_LIMITED, failure = LocationFailure.ACCESS_DENIED)
         } catch (_: RuntimeException) {
@@ -50,7 +52,7 @@ internal class CachedLocationCollector(private val context: Context) {
         }
     }
 
-    @Suppress("MissingPermission", "DEPRECATION")
+    @Suppress("MissingPermission")
     private fun read(manager: LocationManager, provider: CachedProvider): CachedLocationCheck = try {
         val name = when (provider) {
             CachedProvider.GPS -> LocationManager.GPS_PROVIDER
@@ -61,11 +63,10 @@ internal class CachedLocationCollector(private val context: Context) {
         if (location == null) {
             CachedLocationCheck(provider, LocationState.UNAVAILABLE, failure = LocationFailure.NO_CACHE)
         } else {
-            // Do not read or retain coordinates, wall-clock fix times, extras or accuracy.
-            val mock = if (Build.VERSION.SDK_INT >= 31) location.isMock else location.isFromMockProvider
-            val age = cacheAge(location.elapsedRealtimeNanos, SystemClock.elapsedRealtimeNanos())
-            CachedLocationCheck(provider, if (mock) LocationState.OBSERVED else LocationState.NOT_OBSERVED, mock, age)
+            readCachedLocationMetadata(provider, location)
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (_: IllegalArgumentException) {
         CachedLocationCheck(provider, LocationState.UNSUPPORTED, failure = LocationFailure.PROVIDER_ABSENT)
     } catch (_: SecurityException) {

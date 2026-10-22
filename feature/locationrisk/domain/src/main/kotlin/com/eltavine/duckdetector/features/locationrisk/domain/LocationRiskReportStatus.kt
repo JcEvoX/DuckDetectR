@@ -25,7 +25,9 @@ fun LocationRiskReport.toDetectorStatus(): DetectorStatus = when {
     stage == LocationRiskStage.LOADING -> DetectorStatus.info(InfoKind.SUPPORT)
     contracts.any { it.state == LocationState.OBSERVED } -> DetectorStatus.warning()
     contracts.any { it.failure == LocationFailure.PLATFORM_FAILURE } ||
-        cache?.failure == LocationFailure.PLATFORM_FAILURE || cache?.samples.orEmpty().any { it.failure == LocationFailure.PLATFORM_FAILURE } ||
+        cache?.failure == LocationFailure.PLATFORM_FAILURE || cache?.samples.orEmpty().any {
+            it.failure == LocationFailure.PLATFORM_FAILURE || it.ageFailure == LocationFailure.PLATFORM_FAILURE
+        } ||
         installedPackage?.failure == LocationFailure.PLATFORM_FAILURE -> DetectorStatus.info(InfoKind.ERROR)
     contracts.isEmpty() || contracts.any { it.state == LocationState.UNAVAILABLE || it.state == LocationState.PERMISSION_LIMITED } ->
         DetectorStatus.info(InfoKind.SUPPORT)

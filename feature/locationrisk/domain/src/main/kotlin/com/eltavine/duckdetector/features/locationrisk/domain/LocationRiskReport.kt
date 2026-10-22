@@ -39,6 +39,7 @@ data class CachedLocationCheck(
     val mockMarked: Boolean? = null,
     val age: CacheAge = CacheAge.UNKNOWN,
     val failure: LocationFailure? = null,
+    val ageFailure: LocationFailure? = null,
 )
 data class CachedLocationContext(
     val state: LocationState,

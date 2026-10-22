@@ -51,6 +51,13 @@ class LocationRiskReportStatusTest {
     @Test fun `clean local contracts never authenticate a location`() {
         assertEquals(DetectionSeverity.INFO, ready(clean()).toDetectorStatus().severity)
     }
+    @Test fun `cached freshness failure stays visible without raising mock evidence to warning`() {
+        val report = ready(clean()).copy(cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
+            CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, true, ageFailure = LocationFailure.PLATFORM_FAILURE),
+        )))
+        assertEquals(DetectionSeverity.INFO, report.toDetectorStatus().severity)
+        assertEquals(InfoKind.ERROR, report.toDetectorStatus().infoKind)
+    }
     private fun clean() = LocationContract.entries.map { LocationContractCheck(it, LocationState.NOT_OBSERVED) }
     private fun ready(checks: List<LocationContractCheck> = emptyList()) = LocationRiskReport(LocationRiskStage.READY, checks)
 }
