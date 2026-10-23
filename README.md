@@ -30,6 +30,17 @@
   <a href="README.md">English</a> &nbsp; <a href="README_ZH.md">简体中文</a>
 </p>
 
+> [!IMPORTANT]
+> **Why Duck Detector?**
+>
+> Duck Detector is an Android device environment inspection tool similar to Momo.
+>
+> While obsessing over whether a device environment is "normal" can be excessive, some apps and services do treat users differently based on device integrity, the system environment, and other risk signals.
+>
+> This may involve additional identity verification, feature restrictions, denial of service, or opaque risk controls. You might not receive a clear notification or know why your device is being treated differently.
+>
+> **Duck Detector aims to make these otherwise opaque device-environment signals visible.** We provide diagnostic findings and supporting evidence rather than deciding on behalf of third-party apps whether your device should be trusted.
+
 # Overview
 
 DuckDetector collects and correlates security-relevant evidence on an Android device. It looks for boot-state changes, root and SU artifacts, runtime injection or hooking, mount namespace anomalies, modified system properties, suspicious applications, KeyStore and attestation inconsistencies, and signs of virtualization.
