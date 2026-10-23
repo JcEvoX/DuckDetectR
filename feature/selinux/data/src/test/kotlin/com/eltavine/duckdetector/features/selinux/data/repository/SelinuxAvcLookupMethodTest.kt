@@ -34,6 +34,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SelinuxAvcLookupMethodTest {
+    @Test fun `migration-only strong parent timing raises anomaly from serialized snapshot`() {
+        val sample = SelinuxAvcLookupSnapshot(
+            state = SelinuxAvcLookupState.INCONCLUSIVE,
+            parentTiming = SelinuxAvcParentTiming(
+                attempted = true, complete = false, error = 11,
+                pid = 5354, cpu = 0, pairs = 511, migrations = 1,
+                aSlower = 471, medianANs = 3125, medianBNs = 2552,
+                medianDeltaNs = 573, protocol = 1,
+                positiveBlocks = 15, negativeBlocks = 0, zeroBlocks = 0,
+            ),
+        )
+        val method = buildAppZygoteTimingMethod(sample)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, method.avcLookup!!.timingVerdict)
+        assertEquals(false, method.isSecure)
+        assertNull(buildAvcLookupMethod(sample).isSecure)
+    }
+
     @Test fun `positive parent timing raises anomaly but leaves AVC evidence informational`() {
         val sample = SelinuxAvcLookupSnapshot(
             state = SelinuxAvcLookupState.UNAVAILABLE,

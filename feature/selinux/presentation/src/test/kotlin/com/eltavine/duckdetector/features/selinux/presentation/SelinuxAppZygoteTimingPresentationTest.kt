@@ -68,6 +68,19 @@ class SelinuxAppZygoteTimingPresentationTest {
         assertTrue(missing.detail.orEmpty().contains("Parent preload: N/A"))
     }
 
+    @Test fun `migration-only partial sample with 90 percent A slower raises Danger`() {
+        val input = timingResult(573, 15, 0, 471, pairs = 511, migrations = 1)
+        val model = SelinuxCardModelMapper().map(report(input))
+        assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals(DetectorStatus.danger(), model.methodRows.single().status)
+        assertTrue(model.methodRows.single().detail.orEmpty().contains("A−B=573 ns"))
+        assertTrue(model.methodRows.single().detail.orEmpty().contains("A slower=471/511"))
+        assertTrue(model.methodRows.single().detail.orEmpty().contains("90% A-slower criterion"))
+        val weaker = SelinuxCardModelMapper().map(report(timingResult(573, 15, 0, 459, pairs = 511, migrations = 1)))
+        assertEquals(DetectorStatus.allClear(), weaker.status)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE.label, weaker.methodRows.single().value)
+    }
+
     @Test fun `carrier startup failure is unavailable and is not a negative timing measurement`() {
         val base = timingResult(0, 0, 0, 0, pairs = 0)
         val reading = requireNotNull(base.avcLookup).copy(
@@ -88,18 +101,22 @@ class SelinuxAppZygoteTimingPresentationTest {
         assertEquals(DetectorStatus.allClear(), SelinuxCardModelMapper().map(report(result)).status)
     }
 
-    private fun timingResult(delta: Long, positive: Int, negative: Int, slower: Int, pairs: Int = 512): SelinuxCheckResult {
+    private fun timingResult(
+        delta: Long, positive: Int, negative: Int, slower: Int,
+        pairs: Int = 512, migrations: Int = 0,
+    ): SelinuxCheckResult {
         val reading = SelinuxAvcLookupReading(
             collection = SelinuxAvcLookupCollection.TIMING_ONLY, writesPerBatch = 4096,
             batchesA = emptyList(), batchesB = emptyList(), completedRounds = 0,
             pairs = pairs, medianANs = 1000, medianBNs = 900, medianDeltaNs = delta,
             positiveBlocks = positive, negativeBlocks = negative, aSlower = slower,
             parentTiming = SelinuxParentTimingReading(
-                attempted = true, complete = pairs == 512, pid = 12345, cpu = 7,
-                pairs = pairs, aSlower = slower, medianANs = 1000, medianBNs = 900,
+                attempted = true, complete = pairs == 512 && migrations == 0,
+                error = if (migrations > 0) 11 else 0, pid = 12345, cpu = 7,
+                pairs = pairs, migrations = migrations, aSlower = slower, medianANs = 1000, medianBNs = 900,
                 medianDeltaNs = delta, protocol = 1,
                 positiveBlocks = positive, negativeBlocks = negative,
-                zeroBlocks = 16 - positive - negative,
+                zeroBlocks = maxOf(0, pairs / 32 - positive - negative),
             ),
             details = SelinuxAvcLookupCollectionDetails(null, 2, null, false, "EXITED", 0, 0, 0,
                 3, -1, 0, 0, "No cache_stats"),
