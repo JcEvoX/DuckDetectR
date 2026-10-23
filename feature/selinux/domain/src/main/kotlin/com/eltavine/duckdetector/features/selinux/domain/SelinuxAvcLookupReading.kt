@@ -110,15 +110,26 @@ data class SelinuxAvcLookupReading(
                 return SelinuxAppZygoteTimingVerdict.UNAVAILABLE
             // The parent has its own preflight and identity checks. A failure in
             // the later AVC child cannot erase an already completed parent sample.
-            if (!sample.complete || sample.error != 0 || sample.pid <= 0 || sample.cpu < 0 ||
-                sample.pairs != 512 || sample.migrations != 0 || sample.aSlower !in 0..sample.pairs ||
+            if (sample.pid <= 0 || sample.cpu < 0 ||
+                sample.pairs !in 1..512 || sample.migrations !in 0..512 ||
+                sample.aSlower !in 0..sample.pairs ||
                 sample.medianANs == null || sample.medianBNs == null || sample.medianDeltaNs == null ||
                 sample.medianANs < 0 || sample.medianBNs < 0 ||
                 sample.positiveBlocks !in 0..16 || sample.negativeBlocks !in 0..16 || sample.zeroBlocks !in 0..16 ||
-                sample.positiveBlocks + sample.negativeBlocks + sample.zeroBlocks != 16)
+                sample.positiveBlocks + sample.negativeBlocks + sample.zeroBlocks != sample.pairs / 32)
+                return SelinuxAppZygoteTimingVerdict.INCONCLUSIVE
+            val complete = sample.complete && sample.error == 0 &&
+                sample.pairs == 512 && sample.migrations == 0
+            // Migrations alone may invalidate one or more pairs without changing
+            // the sign of a strong remaining signal. Keep other failures excluded.
+            val strongMigrationSignal = !sample.complete && sample.error == 11 &&
+                sample.migrations > 0 && sample.pairs + sample.migrations == 512 &&
+                sample.pairs >= 256 && sample.medianDeltaNs > 0 &&
+                sample.aSlower.toLong() * 10 >= sample.pairs.toLong() * 9
+            if (!complete && !strongMigrationSignal)
                 return SelinuxAppZygoteTimingVerdict.INCONCLUSIVE
             // Classification follows the standalone paired-median PoC. Block
-            // counts and A-slower counts are diagnostics, not extra thresholds.
+            // counts are diagnostic only for a complete sample.
             return when {
                 sample.medianDeltaNs > 0 -> SelinuxAppZygoteTimingVerdict.POSITIVE
                 sample.medianDeltaNs < 0 -> SelinuxAppZygoteTimingVerdict.NEGATIVE

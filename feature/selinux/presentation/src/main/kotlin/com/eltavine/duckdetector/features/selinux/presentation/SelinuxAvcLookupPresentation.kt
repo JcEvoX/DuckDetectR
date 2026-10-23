@@ -52,8 +52,9 @@ internal fun appZygoteTimingRow(result: SelinuxCheckResult): SelinuxDetailRowMod
             "512 AB/BA pairs, 32 warmups; CLOCK_MONOTONIC_RAW; paired A−B > 0 ns is positive, " +
             "0 ns is baseline, and < 0 ns is negative. Block counts are diagnostic only. " +
             "Measured in the preload parent without changing CPU affinity. " +
-            "A CPU change within a sampled A/B pair or an incomplete sample invalidates classification; " +
-            "CPU switches between completed pairs are allowed. " +
+            "CPU switches between completed pairs are allowed. Incomplete measurements are normally " +
+            "inconclusive, except migration-only samples with at least 256 accepted pairs, positive " +
+            "A−B, and at least 90% A-slower pairs. " +
             "One retained preload is one measurement.\n" +
             (if (parent.attempted) "Parent preload (PID=${parent.pid}, entry CPU=${parent.cpu}): " +
                 "A−B=${parent.medianDeltaNs?.let { "$it ns" } ?: "N/A"}; " +
@@ -64,7 +65,9 @@ internal fun appZygoteTimingRow(result: SelinuxCheckResult): SelinuxDetailRowMod
                 "migrations=${parent.migrations}; complete=${parent.complete}; errno=${parent.error}. " +
                 (if (parent.protocol == 1) "This parent sample supplies the timing verdict. "
                  else "Legacy pinned parent diagnostic; unavailable for PoC classification. ") +
-                (if (!parent.complete) "Partial-sample medians are diagnostic only. " else "")
+                (if (!parent.complete && verdict == SelinuxAppZygoteTimingVerdict.POSITIVE)
+                    "Migration-only partial sample met the 90% A-slower criterion. "
+                 else if (!parent.complete) "Partial-sample medians are diagnostic only. " else "")
             else "Parent preload: N/A (not collected). ") +
             "\nPinned child diagnostic (PID=${reading.details.childPid}, CPU=${reading.details.cpu}): " +
             "paired A−B=${measured(reading.medianDeltaNs)}; A=${measured(reading.medianANs)}, " +

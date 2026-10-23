@@ -93,8 +93,8 @@ internal fun buildAppZygoteTimingMethod(snapshot: SelinuxAvcLookupSnapshot): Sel
     return SelinuxCheckResult(
         method = SelinuxOracle.APP_ZYGOTE_ATTR_TIMING.label,
         status = verdict.label,
-        // Only a complete, consistently positive preload-parent timing sample
-        // is strong enough to raise an anomaly. Inconclusive is not a clean pass.
+        // Completed positives and migration-only positives with strong paired
+        // support raise an anomaly. Inconclusive is not a clean pass.
         isSecure = if (verdict == SelinuxAppZygoteTimingVerdict.POSITIVE) false else null,
         permissionDenied = reading.collection == SelinuxAvcLookupCollection.PERMISSION_LIMITED,
         oracle = SelinuxOracle.APP_ZYGOTE_ATTR_TIMING,

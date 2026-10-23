@@ -8,6 +8,7 @@ class SelinuxAppZygoteTimingVerdictTest {
         delta: Long, positive: Int, negative: Int, slower: Int,
         pairs: Int = 512, migrations: Int = 0,
         collection: SelinuxAvcLookupCollection = SelinuxAvcLookupCollection.COLLECTED,
+        error: Int = if (migrations > 0) 11 else 0,
     ) = SelinuxAvcLookupReading(
         collection = collection, writesPerBatch = 4096, batchesA = emptyList(), batchesB = emptyList(),
         completedRounds = 4, pairs = pairs, medianANs = 1000, medianBNs = 1000,
@@ -20,11 +21,11 @@ class SelinuxAppZygoteTimingVerdictTest {
         negativeBlocks = negative, zeroBlocks = 16 - positive - negative,
         parentTiming = SelinuxParentTimingReading(
             attempted = true, complete = pairs == 512 && migrations == 0,
-            pid = 9876, cpu = 7, pairs = pairs, migrations = migrations,
+            error = error, pid = 9876, cpu = 7, pairs = pairs, migrations = migrations,
             aSlower = slower, medianANs = 1000, medianBNs = 900,
             medianDeltaNs = delta, protocol = 1,
             positiveBlocks = positive, negativeBlocks = negative,
-            zeroBlocks = 16 - positive - negative,
+            zeroBlocks = maxOf(0, pairs / 32 - positive - negative),
         ),
     )
 
@@ -46,9 +47,30 @@ class SelinuxAppZygoteTimingVerdictTest {
         assertEquals(SelinuxAppZygoteTimingVerdict.NEGATIVE, reading(-157, 5, 11, 100).timingVerdict)
     }
 
-    @Test fun `legacy pairs and any migration are never positive`() {
+    @Test fun `migration-only partial sample with at least 90 percent A-slower is positive`() {
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE,
+            reading(573, 15, 0, 471, pairs = 511, migrations = 1).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE,
+            reading(1, 15, 0, 460, pairs = 511, migrations = 1).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE,
+            reading(157, 8, 0, 231, pairs = 256, migrations = 256).timingVerdict)
+    }
+
+    @Test fun `migration-only fallback requires adequate evidence and no other failures`() {
         assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(157, 13, 3, 340, pairs = 128).timingVerdict)
         assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE, reading(157, 13, 3, 340, migrations = 1).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE,
+            reading(573, 15, 0, 459, pairs = 511, migrations = 1).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE,
+            reading(-573, 15, 0, 510, pairs = 511, migrations = 1).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE,
+            reading(573, 7, 0, 230, pairs = 255, migrations = 257).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE,
+            reading(573, 15, 0, 471, pairs = 511, migrations = 1, error = 5).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE,
+            reading(573, 15, 0, 471, pairs = 511, migrations = 0).timingVerdict)
+        assertEquals(SelinuxAppZygoteTimingVerdict.INCONCLUSIVE,
+            reading(573, 15, 0, 471, pairs = 511, migrations = 2).timingVerdict)
         assertEquals(SelinuxAppZygoteTimingVerdict.POSITIVE, reading(
             157, 13, 3, 340, collection = SelinuxAvcLookupCollection.PERMISSION_LIMITED,
         ).timingVerdict)
