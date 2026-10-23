@@ -20,7 +20,7 @@ package com.eltavine.duckdetector.features.tee.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -100,7 +100,7 @@ private class TeeDetectorSession(
 
     @Composable
     override fun Card() {
-        val state by viewModel.uiState.collectAsState()
+        val state by viewModel.uiState.collectAsStateWithLifecycle()
         TeeDetectorCard(
             model = state.cardModel,
             showDetailsDialog = state.showDetailsDialog,

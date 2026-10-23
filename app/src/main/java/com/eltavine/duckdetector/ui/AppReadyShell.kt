@@ -45,7 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -131,7 +131,7 @@ internal fun AppReadyShell(
     val updateFactory = remember(context) { updateViewModelFactory(context) }
     val updateViewModel: UpdateViewModel = viewModel(factory = updateFactory)
     val accelerationStore = remember(appContext) { GitHubAccelerationStore.getInstance(appContext) }
-    val gitHubAcceleration by accelerationStore.acceleration.collectAsState(initial = null)
+    val gitHubAcceleration by accelerationStore.acceleration.collectAsStateWithLifecycle(initialValue = null)
     var accelerationOfferDismissed by rememberSaveable { mutableStateOf(false) }
     val appLocale = LocalConfiguration.current.locales[0]
     val offerGitHubAcceleration = !accelerationOfferDismissed &&
@@ -142,7 +142,7 @@ internal fun AppReadyShell(
     val deviceProfile = DetectorFeatures.deviceProfile.rememberSession()
     // The scan coordinator, the dashboard and the export list detectors by id.
     val detectors = remember(detectorSessions) { detectorSessions.sortedBy { it.id.value } }
-    val updateUiState by updateViewModel.uiState.collectAsState()
+    val updateUiState by updateViewModel.uiState.collectAsStateWithLifecycle()
     val visibleUpdate = updateUiState.availableUpdate.takeIf { updateUiState.isDialogVisible }
     val updateDialogPayload = rememberRetainedDialogPayload(visibleUpdate)
 
@@ -160,7 +160,7 @@ internal fun AppReadyShell(
     val scanViewModel: DetectorScanViewModel = viewModel(
         factory = remember { DetectorScanViewModel.factory(detectors.map { it.summary }) },
     )
-    val scanState by scanViewModel.coordinator.state.collectAsState()
+    val scanState by scanViewModel.coordinator.state.collectAsStateWithLifecycle()
     val detectorSummaries = scanState.detectors
     val isDashboardLoading = scanState.isLoading
     val dashboardScanDurationMillis = scanState.timeline.durationMillis

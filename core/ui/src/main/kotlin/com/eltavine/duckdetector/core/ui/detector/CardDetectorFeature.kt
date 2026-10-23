@@ -18,7 +18,7 @@
 package com.eltavine.duckdetector.core.ui.detector
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -75,7 +75,7 @@ private class CardDetectorSession<R : Any, M : DetectorHeadline>(
 
     @Composable
     override fun Card() {
-        val state by viewModel.state.collectAsState()
+        val state by viewModel.state.collectAsStateWithLifecycle()
         card(state.cardModel)
     }
 }
