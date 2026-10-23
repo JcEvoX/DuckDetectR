@@ -19,18 +19,19 @@ package com.eltavine.duckdetector.features.settings.ui.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AdminPanelSettings
 import com.eltavine.duckdetector.features.settings.ui.R
-import io.github.xiaotong6666.uihelper.adaptive.AdaptiveContent
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import io.github.xiaotong6666.uihelper.adaptive.NativeSettingsNavigationItem
 
 @Composable
-internal fun ConsentPermissionButton(onClick: () -> Unit) {
-    val label = stringResource(R.string.settings_manage_permissions)
-    AdaptiveContent(
-        miuix = { Button(onClick = onClick) { MiuixText(label) } },
-        material = { TextButton(onClick = onClick) { Text(label) } },
+internal fun ConsentPermissionButton(
+    onClick: () -> Unit,
+) {
+    NativeSettingsNavigationItem(
+        title = stringResource(R.string.settings_manage_permissions),
+        icon = Icons.Rounded.AdminPanelSettings,
+        onClick = onClick,
+        materialColors = settingsItemColors(),
     )
 }
