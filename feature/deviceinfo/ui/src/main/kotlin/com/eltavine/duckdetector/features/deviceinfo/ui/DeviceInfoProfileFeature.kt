@@ -19,7 +19,7 @@ package com.eltavine.duckdetector.features.deviceinfo.ui
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +51,7 @@ private class DeviceInfoProfileSession(
 
     @Composable
     override fun Card() {
-        val state by viewModel.uiState.collectAsStateWithLifecycle()
+        val state by viewModel.uiState.collectAsState()
         DeviceInfoCard(model = state.cardModel)
     }
 }

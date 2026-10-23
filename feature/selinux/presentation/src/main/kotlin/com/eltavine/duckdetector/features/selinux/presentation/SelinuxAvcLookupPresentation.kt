@@ -52,7 +52,8 @@ internal fun appZygoteTimingRow(result: SelinuxCheckResult): SelinuxDetailRowMod
             "512 AB/BA pairs, 32 warmups; CLOCK_MONOTONIC_RAW; paired A−B > 0 ns is positive, " +
             "0 ns is baseline, and < 0 ns is negative. Block counts are diagnostic only. " +
             "Measured in the preload parent without changing CPU affinity. " +
-            "A change from the entry CPU at any sampled endpoint or an incomplete sample invalidates classification. " +
+            "A CPU change within a sampled A/B pair or an incomplete sample invalidates classification; " +
+            "CPU switches between completed pairs are allowed. " +
             "One retained preload is one measurement.\n" +
             (if (parent.attempted) "Parent preload (PID=${parent.pid}, entry CPU=${parent.cpu}): " +
                 "A−B=${parent.medianDeltaNs?.let { "$it ns" } ?: "N/A"}; " +

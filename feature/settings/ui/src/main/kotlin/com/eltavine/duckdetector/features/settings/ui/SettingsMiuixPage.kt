@@ -41,7 +41,6 @@ import com.eltavine.duckdetector.features.settings.ui.components.SettingsSection
 import io.github.xiaotong6666.uihelper.adaptive.SettingsDropdownItem
 import io.github.xiaotong6666.uihelper.adaptive.SettingsToggleItem
 import io.github.xiaotong6666.uihelper.adaptive.adaptiveVerticalScrollFeedback
-import io.github.xiaotong6666.uihelper.adaptive.UiContentSpacing
 import io.github.xiaotong6666.uihelper.mode.UiMode
 
 /** Native MIUIX page: the navigation shell provides the collapsing top bar and bottom bar. */
@@ -67,12 +66,12 @@ internal fun SettingsMiuixPage(
             .adaptiveVerticalScrollFeedback()
             .then(pageModifier),
         overscrollEffect = null,
-        verticalArrangement = Arrangement.spacedBy(UiContentSpacing.SettingsItemGap),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
         contentPadding = PaddingValues(
-            start = scaffoldPadding.calculateStartPadding(direction) + UiContentSpacing.MiuixHorizontal,
-            top = scaffoldPadding.calculateTopPadding() + UiContentSpacing.PageTop,
-            end = scaffoldPadding.calculateEndPadding(direction) + UiContentSpacing.MiuixHorizontal,
-            bottom = scaffoldPadding.calculateBottomPadding() + UiContentSpacing.SettingsBottom,
+            start = scaffoldPadding.calculateStartPadding(direction) + 12.dp,
+            top = scaffoldPadding.calculateTopPadding() + 12.dp,
+            end = scaffoldPadding.calculateEndPadding(direction) + 12.dp,
+            bottom = scaffoldPadding.calculateBottomPadding() + 24.dp,
         ),
     ) {
         item(key = "appearance") {
@@ -94,7 +93,6 @@ internal fun SettingsMiuixPage(
         }
         if (consentToggles.isNotEmpty()) {
             item(key = "detection-options") {
-                val managePermissions = consentToggles.firstNotNullOfOrNull { it.onManagePermissions }
                 SettingsSection(title = stringResource(R.string.settings_section_detection)) {
                     SettingsGroup {
                         consentToggles.forEach { toggle ->
@@ -105,9 +103,7 @@ internal fun SettingsMiuixPage(
                                 icon = toggle.setting.icon,
                                 onToggle = { toggle.onCheckedChange(!toggle.checked) },
                             )
-                        }
-                        managePermissions?.let {
-                            ConsentPermissionButton(onClick = it)
+                            toggle.onManagePermissions?.let { ConsentPermissionButton(it) }
                         }
                     }
                 }

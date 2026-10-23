@@ -109,9 +109,10 @@ namespace duckdetector::selinux::avc_lookup {
             }
             if (i < 0) continue;
             const int after = current_cpu();
-            // The relative costs change across CPU classes. Equal endpoints in
-            // each pair do not make pairs from different CPUs comparable.
-            if (before < 0 || after < 0 || before != result.cpu || after != result.cpu) {
+            // Reject a CPU change within the A/B pair, as the standalone PoC
+            // does. A switch between completed pairs is not a migration of
+            // either pair and must not discard all subsequent measurements.
+            if (before < 0 || after < 0 || before != after) {
                 ++result.migrations;
                 continue;
             }

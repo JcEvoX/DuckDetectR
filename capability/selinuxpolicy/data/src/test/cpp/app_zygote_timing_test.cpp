@@ -19,9 +19,13 @@ static uid_t parent_uid() { return mode == "uid" ? 1000 : 10001; }
 static int parent_cpu() {
     ++cpus;
     if (mode == "migration" && cpus == 1 + kWarmup + 2) return 6;
-    // A move between pairs is also invalid, even when each pair's endpoints match.
+    // A move between completed pairs is valid when each pair's endpoints match.
     if (mode == "between_pairs" && cpus > 1 + kWarmup)
         return ((cpus - 2 - kWarmup) / 2) % 2 ? 7 : 0;
+    // Regression: after 262 complete pairs, the scheduler selects another CPU
+    // for the remaining 250 pairs. Both stretches must remain usable.
+    if (mode == "late_switch" && cpus >= 2 + kWarmup + 2 * 262)
+        return 7;
     return 5;
 }
 static int parent_clock(clockid_t id, timespec *out) {
@@ -110,7 +114,11 @@ int main() {
     assert(!moved.complete && moved.error == EAGAIN && moved.migrations == 1 && moved.pairs == 511);
     assert(moved.medians_available && moved.median_delta_ns == 100 && closes == 1);
     const auto between = run("between_pairs");
-    assert(!between.complete && between.error == EAGAIN && between.migrations > 0);
+    assert(between.complete && between.error == 0 && between.migrations == 0);
+    assert(between.pairs == 512 && between.median_delta_ns == 100);
+    const auto late = run("late_switch");
+    assert(late.complete && late.error == 0 && late.migrations == 0);
+    assert(late.pairs == 512 && late.median_delta_ns == 100);
     for (const char *test : {"uid", "domain", "permissive"}) {
         assert(!run(test).complete && writes == 0);
     }
