@@ -20,6 +20,8 @@ package com.eltavine.duckdetector.features.adbruntime.presentation
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import com.eltavine.duckdetector.core.report.ReportBlock
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbInitSocketSnapshot
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbJdwpSocketSnapshot
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbMdnsServiceKind
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbMdnsSnapshot
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbProbeState
@@ -29,6 +31,7 @@ import com.eltavine.duckdetector.features.adbruntime.domain.AdbProtocolSnapshot
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeReport
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeSample
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeStage
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbSocketPresence
 import com.eltavine.duckdetector.features.adbruntime.domain.UsbRuntimeSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -102,6 +105,78 @@ class AdbRuntimeCardModelMapperTest {
     }
 
     @Test
+    fun socketContradictionBecomesDangerRowWithoutEndpoint() {
+        val sample = AdbRuntimeSample(
+            usbDebuggingEnabled = false,
+            debuggingFeaturesRestricted = false,
+            properties = AdbPropertySnapshot(
+                testHarnessMode = "0",
+                initAdbdState = "stopped",
+            ),
+            initSocket = AdbInitSocketSnapshot(
+                state = AdbProbeState.OBSERVED,
+                presence = AdbSocketPresence.PRESENT_DENIED,
+            ),
+        )
+        val model = mapper.map(
+            AdbRuntimeReport(
+                stage = AdbRuntimeStage.READY,
+                platformApiLevel = 37,
+                samples = listOf(sample, sample),
+                probed = true,
+            ),
+        )
+
+        assertEquals(DetectorStatus.danger(), model.status)
+        val finding = model.signalRows.single()
+        assertEquals("ADB init socket vs init", finding.label)
+        assertEquals(DetectorStatus.danger(), finding.status)
+        assertTrue(finding.detail.orEmpty().contains("init.svc.adbd"))
+        // Socket-only contradictions must not escalate the protocol-specific method.
+        val protocolMethod = model.methodRows.single { it.label == "ADB protocol vs init" }
+        assertEquals("Not established", protocolMethod.value)
+        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), protocolMethod.status)
+    }
+
+    @Test
+    fun severalContradictionsKeepOneRowAndOneDangerEach() {
+        val sample = AdbRuntimeSample(
+            usbDebuggingEnabled = false,
+            debuggingFeaturesRestricted = false,
+            properties = AdbPropertySnapshot(testHarnessMode = "0", initAdbdState = "stopped"),
+            initSocket = AdbInitSocketSnapshot(
+                state = AdbProbeState.OBSERVED,
+                presence = AdbSocketPresence.PRESENT_DENIED,
+            ),
+            jdwpSocket = AdbJdwpSocketSnapshot(abstract = AdbProbeState.OBSERVED),
+        )
+        val mdns = AdbMdnsSnapshot(
+            state = AdbProbeState.OBSERVED,
+            serviceKind = AdbMdnsServiceKind.TLS_CONNECT,
+            address = "192.0.2.5",
+            port = 37123,
+            protocol = AdbProtocolSnapshot(
+                state = AdbProbeState.OBSERVED,
+                responseKind = AdbProtocolResponseKind.START_TLS,
+            ),
+        )
+        val model = mapper.map(
+            AdbRuntimeReport(
+                stage = AdbRuntimeStage.READY,
+                platformApiLevel = 37,
+                samples = listOf(sample, sample),
+                mdnsSamples = listOf(mdns, mdns),
+                probed = true,
+            ),
+        )
+
+        assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals(3, model.signalRows.size)
+        assertTrue(model.signalRows.all { it.status == DetectorStatus.danger() })
+        assertEquals("3 runtime contradiction(s)", model.verdict)
+    }
+
+    @Test
     fun activeSourcesAreWarningsWithoutInventingContradictions() {
         val model = mapper.map(AdbRuntimeReport(
             stage = AdbRuntimeStage.READY, probed = true,
@@ -119,6 +194,46 @@ class AdbRuntimeCardModelMapperTest {
         assertEquals("Active", model.headerFacts.single { it.label == "ADB" }.value)
         assertTrue(model.impactRows.single().detail.orEmpty().contains("does not establish root"))
         assertTrue(model.toDetectorReport().quickFacts.isNotEmpty())
+    }
+
+    @Test
+    fun initSocketRowSeparatesPresentAbsentAndUnobservableStates() {
+        fun rows(socket: AdbInitSocketSnapshot, initState: String = "stopped") = mapper.map(AdbRuntimeReport(
+            stage = AdbRuntimeStage.READY, probed = true,
+            samples = listOf(AdbRuntimeSample(
+                usbDebuggingEnabled = false, debuggingFeaturesRestricted = false,
+                properties = AdbPropertySnapshot(initAdbdState = initState),
+                usb = UsbRuntimeSnapshot(AdbProbeState.OBSERVED),
+                initSocket = socket,
+            )),
+        )).scanRows.single { it.label == "init socket" }
+
+        val present = rows(AdbInitSocketSnapshot(AdbProbeState.OBSERVED, AdbSocketPresence.PRESENT),
+            initState = "running")
+        assertEquals("Present", present.value)
+        assertEquals(DetectorStatus.warning(), present.status)
+
+        val denied = rows(
+            AdbInitSocketSnapshot(AdbProbeState.OBSERVED, AdbSocketPresence.PRESENT_DENIED,
+                "stat(/dev/socket/adbd) was refused"),
+            initState = "running",
+        )
+        assertEquals("Present (label denied)", denied.value)
+        assertEquals(DetectorStatus.warning(), denied.status)
+        assertTrue(denied.detail.orEmpty().contains("/dev/socket/adbd"))
+
+        val absent = rows(AdbInitSocketSnapshot(AdbProbeState.NOT_OBSERVED, AdbSocketPresence.ABSENT))
+        assertEquals("Absent", absent.value)
+        assertEquals(DetectorStatus.allClear(), absent.status)
+
+        val limited = rows(AdbInitSocketSnapshot(AdbProbeState.PERMISSION_REQUIRED))
+        assertEquals("Permission required", limited.value)
+        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), limited.status)
+
+        val disagreement = rows(AdbInitSocketSnapshot(AdbProbeState.OBSERVED, AdbSocketPresence.PRESENT),
+            initState = "stopped")
+        assertEquals("Present, init reports stopped", disagreement.value)
+        assertTrue(disagreement.detail.orEmpty().contains("removes the socket before"))
     }
 
     @Test

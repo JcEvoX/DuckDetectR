@@ -21,6 +21,8 @@ import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbDaemonState
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbFindingKind
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbJdwpSocketSnapshot
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbInitSocketSnapshot
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbMdnsServiceKind
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbMdnsSnapshot
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbProbeState
@@ -30,6 +32,7 @@ import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeFinding
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeReport
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeSample
 import com.eltavine.duckdetector.features.adbruntime.domain.AdbRuntimeStage
+import com.eltavine.duckdetector.features.adbruntime.domain.AdbSocketPresence
 import com.eltavine.duckdetector.features.adbruntime.domain.findings
 import com.eltavine.duckdetector.features.adbruntime.domain.isAdbActive
 import com.eltavine.duckdetector.features.adbruntime.domain.toDetectorStatus
@@ -60,7 +63,7 @@ class AdbRuntimeCardModelMapper {
             AdbRuntimeStage.LOADING -> "Scanning"
             AdbRuntimeStage.FAILED -> "Scan failed"
             AdbRuntimeStage.READY -> when {
-                findings.isNotEmpty() -> "Runtime contradiction"
+                findings.isNotEmpty() -> "${findings.size} runtime contradiction(s)"
                 report.isAdbActive() -> "ADB enabled"
                 !report.probed -> "Not evaluated"
                 else -> "ADB state consistent"
@@ -92,10 +95,17 @@ class AdbRuntimeCardModelMapper {
         )
 
     private fun AdbRuntimeFinding.detail(): String = when (kind) {
-        AdbFindingKind.INIT_STOPPED_WITH_ADB_PROTOCOL ->
+        AdbFindingKind.INIT_STOPPED_WITH_ADB_PROTOCOL -> endpoint?.let { endpoint ->
             "The local ${endpoint.serviceKind.label()} endpoint ${endpoint.address}:${endpoint.port} " +
                 "answered with the ${endpoint.responseKind.label()} in both discovery passes while " +
                 "init.svc.adbd stayed stopped."
+        } ?: "A confirmed ADB endpoint disagreed with init.svc.adbd."
+        AdbFindingKind.INIT_STOPPED_WITH_ADB_INIT_SOCKET ->
+            "init's adbd socket stayed visible in both samples while init.svc.adbd reported stopped. " +
+                "init unlinks that socket before it publishes stopped."
+        AdbFindingKind.INIT_STOPPED_WITH_ADB_JDWP_SOCKET ->
+            "adbd's JDWP control socket answered in both samples while init.svc.adbd reported stopped. " +
+                "adbd closes that listener when the process init reaps goes away."
     }
 
     private fun scanRows(report: AdbRuntimeReport): List<AdbRuntimeDetailRowModel> {
@@ -120,6 +130,8 @@ class AdbRuntimeCardModelMapper {
                     AdbDaemonState.OTHER, null -> DetectorStatus.info(InfoKind.SUPPORT)
                 },
             ),
+            initSocketRow(sample),
+            jdwpSocketRow(sample.jdwpSocket),
             usbRuntimeRow(sample),
             mdnsRow(report.latestMdns),
             infoRow("sys.usb.state", sample.properties.sysUsbState ?: "Unavailable").copy(
@@ -154,7 +166,7 @@ class AdbRuntimeCardModelMapper {
         AdbRuntimeDetailRowModel("Interpretation", verdict(report, report.findings()), report.toDetectorStatus(),
             when {
                 report.stage != AdbRuntimeStage.READY -> "No completed runtime conclusion is available."
-                report.findings().isNotEmpty() -> "A stable, protocol-confirmed ADB endpoint disagrees with the observed adbd lifecycle. This does not identify a root or hiding implementation."
+                report.findings().isNotEmpty() -> "An ADB runtime surface disagrees with the init lifecycle. This does not identify a root or hiding implementation."
                 report.isAdbActive() -> "Debugging settings or runtime activity were observed. ADB can be enabled on an ordinary device and does not establish root access."
                 else -> "Only available sources were evaluated. Permission restrictions, discovery failures and lifecycle transitions limit negative observations."
             }),
@@ -163,23 +175,31 @@ class AdbRuntimeCardModelMapper {
     private fun methodRows(report: AdbRuntimeReport): List<AdbRuntimeDetailRowModel> {
         if (report.stage != AdbRuntimeStage.READY) {
             val status = report.toDetectorStatus()
-            return listOf("Settings and policy", "USB runtime", "ADB mDNS", "ADB protocol vs init").map {
+            return listOf(
+                "Settings and policy", "init socket", "JDWP control socket", "USB runtime",
+                "ADB mDNS", "ADB protocol vs init",
+            ).map {
                 AdbRuntimeDetailRowModel(it, if (report.stage == AdbRuntimeStage.LOADING) "Pending" else "Unavailable", status)
             }
         }
         val sample = report.samples.lastOrNull()
         val protocol = report.latestMdns.protocol
+        val protocolContradiction = report.findings().any {
+            it.kind == AdbFindingKind.INIT_STOPPED_WITH_ADB_PROTOCOL
+        }
         return listOf(
             infoRow("Settings and policy", if (sample == null) "Unavailable" else "Context collected",
                 "Debugging restrictions and Test Harness Mode qualify settings; settings and USB gadget state are not hard contradictions against init."),
+            sample?.let(::initSocketRow) ?: infoRow("init socket", "Unavailable"),
+            sample?.let { jdwpSocketRow(it.jdwpSocket) } ?: infoRow("JDWP control socket", "Unavailable"),
             sample?.let(::usbRuntimeRow) ?: infoRow("USB runtime", "Unavailable"),
             mdnsRow(report.latestMdns),
             AdbRuntimeDetailRowModel("ADB protocol vs init", when {
-                report.findings().isNotEmpty() -> "Persistent contradiction"
+                protocolContradiction -> "Persistent contradiction"
                 protocol.confirmed -> "No contradiction established"
                 else -> "Not established"
             }, when {
-                report.findings().isNotEmpty() -> DetectorStatus.danger()
+                protocolContradiction -> DetectorStatus.danger()
                 protocol.state == AdbProbeState.UNAVAILABLE -> DetectorStatus.info(InfoKind.ERROR)
                 else -> DetectorStatus.info(InfoKind.SUPPORT)
             },
@@ -207,6 +227,50 @@ class AdbRuntimeCardModelMapper {
         AdbProbeState.OBSERVED, AdbProbeState.NOT_OBSERVED -> observationStatus(active)
         AdbProbeState.UNAVAILABLE -> DetectorStatus.info(InfoKind.ERROR)
         AdbProbeState.PERMISSION_REQUIRED, AdbProbeState.NOT_PROBED -> DetectorStatus.info(InfoKind.SUPPORT)
+    }
+
+    private fun initSocketRow(sample: AdbRuntimeSample): AdbRuntimeDetailRowModel {
+        val socket = sample.initSocket
+        val stopped = sample.properties.daemonState == AdbDaemonState.STOPPED
+        val value = when (socket.state) {
+            AdbProbeState.OBSERVED -> when {
+                socket.presence == AdbSocketPresence.PRESENT_DENIED && stopped ->
+                    "Present, init reports stopped"
+                socket.presence == AdbSocketPresence.PRESENT_DENIED -> "Present (label denied)"
+                stopped -> "Present, init reports stopped"
+                else -> "Present"
+            }
+            AdbProbeState.NOT_OBSERVED -> "Absent"
+            AdbProbeState.PERMISSION_REQUIRED -> "Permission required"
+            AdbProbeState.NOT_PROBED -> "Not probed"
+            AdbProbeState.UNAVAILABLE -> "Unavailable"
+        }
+        val detail = buildList {
+            socket.detail?.takeIf { it.isNotBlank() }?.let(::add)
+            if (stopped && socket.present == true) {
+                add(
+                    "init.svc.adbd reads stopped while the socket init creates for that service is " +
+                        "still present; init removes the socket before it publishes that value.",
+                )
+            }
+        }.joinToString("\n").ifBlank { null }
+        return infoRow("init socket", value, detail)
+            .copy(status = probeStatus(socket.state, socket.present == true))
+    }
+
+    private fun jdwpSocketRow(socket: AdbJdwpSocketSnapshot): AdbRuntimeDetailRowModel {
+        val value = when (socket.abstract) {
+            AdbProbeState.OBSERVED -> "Present"
+            AdbProbeState.NOT_OBSERVED -> "Not observed"
+            else -> "Not observable"
+        }
+        return infoRow("JDWP control socket", value, socket.detail).copy(
+            status = when (socket.abstract) {
+                AdbProbeState.OBSERVED -> DetectorStatus.warning()
+                AdbProbeState.NOT_OBSERVED -> DetectorStatus.allClear()
+                else -> DetectorStatus.info(InfoKind.SUPPORT)
+            },
+        )
     }
 
     private fun usbRuntimeRow(sample: AdbRuntimeSample): AdbRuntimeDetailRowModel {
@@ -268,6 +332,8 @@ class AdbRuntimeCardModelMapper {
 
     private fun AdbFindingKind.label(): String = when (this) {
         AdbFindingKind.INIT_STOPPED_WITH_ADB_PROTOCOL -> "ADB protocol vs init"
+        AdbFindingKind.INIT_STOPPED_WITH_ADB_INIT_SOCKET -> "ADB init socket vs init"
+        AdbFindingKind.INIT_STOPPED_WITH_ADB_JDWP_SOCKET -> "ADB JDWP socket vs init"
     }
 
     private fun AdbMdnsServiceKind.label(): String = when (this) {
