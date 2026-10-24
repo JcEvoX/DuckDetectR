@@ -47,12 +47,17 @@ class LocationRiskCardModelMapperTest {
         assertEquals("Unavailable", model.headerFacts[1].value)
         assertEquals(DetectionSeverity.WARNING, model.headerFacts[0].status.severity)
     }
-    @Test fun `cached mock remains INFO and stale cache is inconclusive`() {
+    @Test fun `cached mock warns in header detail and export while stale freshness stays inconclusive`() {
         val model = mapper.map(ready().copy(cache = CachedLocationContext(LocationState.OBSERVED,
             samples = listOf(CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, true, CacheAge.STALE)),
         )))
         val rows = model.sections.single { it.key == "cache" }.rows
-        assertEquals(DetectionSeverity.INFO, model.status.severity)
+        assertEquals(DetectionSeverity.WARNING, model.status.severity)
+        assertEquals("Cached mock location observed", model.verdict)
+        assertEquals(DetectionSeverity.WARNING, model.headerFacts[1].status.severity)
+        assertEquals(DetectionSeverity.WARNING, rows.single { it.label == "GPS mock marker" }.status.severity)
+        assertEquals(DetectionSeverity.INFO, rows.single { it.label == "GPS freshness" }.status.severity)
+        assertEquals(DetectionSeverity.WARNING, model.toDetectorReport().severity)
         assertTrue(rows.any { it.value == "Inconclusive" })
         assertEquals("Observed", model.headerFacts[1].value)
     }
@@ -68,7 +73,13 @@ class LocationRiskCardModelMapperTest {
         val details = model.sections.single { it.key == "package" }.rows.mapNotNull { it.detail }.joinToString()
         assertTrue(details.contains("identity unverified"))
         assertTrue(details.contains("caller user/profile"))
-        assertEquals(DetectionSeverity.INFO, model.headerFacts[2].status.severity)
+        assertEquals(DetectionSeverity.WARNING, model.headerFacts[2].status.severity)
+        assertEquals(DetectionSeverity.WARNING, model.status.severity)
+        assertEquals("Location reference package observed", model.verdict)
+        assertEquals(DetectionSeverity.WARNING, model.sections.single { it.key == "package" }.rows.first().status.severity)
+        assertEquals(DetectionSeverity.INFO, model.sections.single { it.key == "package" }.rows.last().status.severity)
+        assertEquals(model.verdict, model.toDetectorReport().verdict)
+        assertEquals(DetectionSeverity.WARNING, model.toDetectorReport().severity)
     }
     @Test fun `one unmarked cache cannot hide denied providers`() {
         val model = mapper.map(ready().copy(cache = CachedLocationContext(LocationState.OBSERVED,
@@ -102,6 +113,9 @@ class LocationRiskCardModelMapperTest {
             CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, true, ageFailure = LocationFailure.PLATFORM_FAILURE),
         ))))
         assertEquals("Observed", model.headerFacts[1].value)
+        assertEquals(DetectionSeverity.WARNING, model.status.severity)
+        val cacheRows = model.sections.single { it.key == "cache" }.rows
+        assertEquals(com.eltavine.duckdetector.core.evidence.InfoKind.ERROR, cacheRows.single { it.label == "GPS freshness" }.status.infoKind)
         val rows = model.toDetectorReport().blocks.filterIsInstance<ReportBlock.Rows>().flatMap { it.rows }
         assertTrue(rows.any { it.label == "GPS mock marker" && it.value == "Observed" })
         assertTrue(rows.any { it.label == "GPS freshness" && it.detail?.contains("Platform query failed") == true })

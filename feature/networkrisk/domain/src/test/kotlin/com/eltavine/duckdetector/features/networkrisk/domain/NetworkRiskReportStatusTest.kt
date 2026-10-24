@@ -18,19 +18,20 @@
 package com.eltavine.duckdetector.features.networkrisk.domain
 
 import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
+import com.eltavine.duckdetector.core.evidence.DetectionSeverity
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import org.junit.Assert.*
 import org.junit.Test
 
 class NetworkRiskReportStatusTest {
-    @Test fun `VPN proxy and installed clients never raise severity`() {
+    @Test fun `observed deployment metadata raises warning`() {
         val report = NetworkRiskReport(
             NetworkRiskStage.READY,
             network = window(SampleConsistency.REPEATED),
             modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK, NetworkObservation.observed("v5.1"))),
         )
-        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), report.toDetectorStatus())
+        assertEquals(DetectorStatus.warning(), report.toDetectorStatus())
         assertEquals(DetectorStatus.info(InfoKind.ERROR), NetworkRiskReport.failed("failure").toDetectorStatus())
     }
 
@@ -80,8 +81,6 @@ class NetworkRiskReportStatusTest {
             base.copy(network = sample.copy(snapshot = sample.snapshot.copy(proxySources = ProxySourceCheck(
                 NetworkObservation.unavailable(ProbeFailure.PLATFORM_FAILURE), ProxySourceComparison.SOURCE_UNAVAILABLE)))),
             base.copy(clients = NetworkClientInventory(InstalledPackageVisibility.UNKNOWN, ObservationState.UNAVAILABLE, emptyList())),
-            base.copy(clients = NetworkClientInventory(InstalledPackageVisibility.RESTRICTED, ObservationState.OBSERVED,
-                listOf(NetworkClientEvidence("test.client", "Test", ObservationState.OBSERVED, signingFailure = ProbeFailure.PLATFORM_FAILURE)))),
             base.copy(modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK,
                 NetworkObservation(ObservationState.INCONCLUSIVE, failure = ProbeFailure.INVALID_METADATA)))),
         )
@@ -100,9 +99,62 @@ class NetworkRiskReportStatusTest {
         assertEquals(InfoKind.SUPPORT, NetworkRiskReport.loading().toDetectorStatus().infoKind)
     }
 
+    @Test fun `every observed VPN and proxy source independently warns only in repeated samples`() {
+        val base = window(SampleConsistency.REPEATED)
+        val link = LinkContext(null, emptyList(), null, false, false, 0)
+        val network = VisibleNetwork(1, NetworkObservation.observed(setOf(NetworkTransport.WIFI)), NetworkObservation.observed(link))
+        val proxy = ProxyConfiguration(ProxyKind.STATIC, 8080, 0)
+        val vpnNetwork = network.copy(transports = NetworkObservation.observed(setOf(NetworkTransport.VPN)))
+        val proxiedNetwork = network.copy(link = NetworkObservation.observed(link.copy(proxy = proxy)))
+        val snapshots = listOf(
+            base.snapshot.copy(visibleNetworks = NetworkObservation.observed(listOf(vpnNetwork))),
+            base.snapshot.copy(defaultProxy = NetworkObservation.observed(proxy)),
+            base.snapshot.copy(defaultProxy = NetworkObservation.observed(ProxyConfiguration(ProxyKind.PAC, -1, 0))),
+            base.snapshot.copy(proxySources = ProxySourceCheck(NetworkObservation.observed(8080), ProxySourceComparison.DIFFERENT)),
+            base.snapshot.copy(visibleNetworks = NetworkObservation.observed(listOf(proxiedNetwork))),
+        )
+        snapshots.forEach { snapshot ->
+            val report = NetworkRiskReport(NetworkRiskStage.READY, network = base.copy(snapshot = snapshot))
+            assertEquals(DetectorStatus.warning(), report.toDetectorStatus())
+            assertEquals(DetectionSeverity.INFO, report.copy(network = base.copy(snapshot = snapshot,
+                consistency = SampleConsistency.CHANGED)).toDetectorStatus().severity)
+        }
+    }
+
+    @Test fun `client package warning survives signing errors and changing networks`() {
+        ClientIdentity.entries.forEach { identity ->
+            val report = NetworkRiskReport(NetworkRiskStage.READY, network = window(SampleConsistency.CHANGED),
+                clients = NetworkClientInventory(InstalledPackageVisibility.RESTRICTED, ObservationState.OBSERVED,
+                    listOf(NetworkClientEvidence("test.client", "Test", ObservationState.OBSERVED, identity,
+                        signingFailure = ProbeFailure.PLATFORM_FAILURE))))
+            assertEquals(DetectorStatus.warning(), report.toDetectorStatus())
+            assertTrue(report.hasProbeErrors())
+        }
+    }
+
+    @Test fun `limited or inconclusive signals and successful empty inventory never warn`() {
+        ObservationState.entries.filter { it != ObservationState.OBSERVED }.forEach { state ->
+            val report = NetworkRiskReport(NetworkRiskStage.READY,
+                network = window(SampleConsistency.REPEATED).copy(snapshot = NetworkSnapshot(
+                    NetworkObservation.observed(1), NetworkObservation.observed(1), NetworkObservation(state),
+                    NetworkObservation.observed(emptyList()), ProxySourceCheck(NetworkObservation(state), ProxySourceComparison.SOURCE_UNAVAILABLE))),
+                clients = NetworkClientInventory(InstalledPackageVisibility.RESTRICTED, ObservationState.OBSERVED,
+                    listOf(NetworkClientEvidence("test.client", "Test", state))),
+                modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK, NetworkObservation(state))))
+            assertEquals(DetectionSeverity.INFO, report.toDetectorStatus().severity)
+        }
+    }
+
+    @Test fun `loading and failed stages do not promote retained observations`() {
+        val report = NetworkRiskReport(NetworkRiskStage.READY,
+            modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK, NetworkObservation.observed("v5.1"))))
+        assertEquals(DetectionSeverity.INFO, report.copy(stage = NetworkRiskStage.LOADING).toDetectorStatus().severity)
+        assertEquals(InfoKind.ERROR, report.copy(stage = NetworkRiskStage.FAILED).toDetectorStatus().infoKind)
+    }
+
     private fun window(consistency: SampleConsistency) = NetworkSampleWindow(
         NetworkSnapshot(NetworkObservation.observed(1), NetworkObservation.absent(),
-            NetworkObservation.observed(ProxyConfiguration(ProxyKind.PAC, -1, 0)), NetworkObservation.observed(emptyList())),
+            NetworkObservation.absent(), NetworkObservation.observed(emptyList())),
         consistency, 100, 2, 1,
     )
 }

@@ -29,7 +29,7 @@ import com.eltavine.duckdetector.features.networkrisk.data.network.AndroidNetwor
 import com.eltavine.duckdetector.features.networkrisk.data.network.toConfiguration
 import com.eltavine.duckdetector.features.networkrisk.data.modules.Box4MagiskCollector
 import com.eltavine.duckdetector.features.networkrisk.data.modules.BoxForRootCollector
-import com.eltavine.duckdetector.core.evidence.InfoKind
+import com.eltavine.duckdetector.core.evidence.DetectionSeverity
 import com.eltavine.duckdetector.features.networkrisk.domain.*
 import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import org.junit.Assert.*
@@ -53,12 +53,16 @@ class NetworkRiskRuntimeTest {
         when (arguments.getString("expectedNetwork")) {
             "absent" -> {
                 assertEquals(ObservationState.NOT_OBSERVED, window.snapshot.defaultNetwork.state)
-                assertEquals(InfoKind.SUPPORT, NetworkRiskReport(NetworkRiskStage.READY, network = window).toDetectorStatus().infoKind)
             }
             "present" -> assertEquals(ObservationState.OBSERVED, window.snapshot.defaultNetwork.state)
         }
         when (arguments.getString("expectedProxy")) {
-            "present" -> assertEquals(ObservationState.OBSERVED, window.snapshot.defaultProxy.state)
+            "present" -> {
+                assertEquals(ObservationState.OBSERVED, window.snapshot.defaultProxy.state)
+                if (window.consistency == SampleConsistency.REPEATED) {
+                    assertEquals(DetectionSeverity.WARNING, NetworkRiskReport(NetworkRiskStage.READY, network = window).toDetectorStatus().severity)
+                }
+            }
             "absent" -> assertEquals(ObservationState.NOT_OBSERVED, window.snapshot.defaultProxy.state)
         }
     }

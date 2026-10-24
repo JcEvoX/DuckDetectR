@@ -17,6 +17,7 @@
 
 package com.eltavine.duckdetector.features.networkrisk.presentation
 
+import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.features.networkrisk.domain.*
 import com.eltavine.duckdetector.features.networkrisk.presentation.model.NetworkRiskDetailRowModel
 
@@ -29,8 +30,9 @@ internal val ObservationState.label: String get() = when (this) {
     ObservationState.INCONCLUSIVE -> "Inconclusive"
 }
 
-internal fun row(label: String, state: ObservationState, detail: String, value: String = state.label, failure: ProbeFailure? = null): NetworkRiskDetailRowModel =
-    NetworkRiskDetailRowModel(label, value, state.toDetectorStatus(failure), detail)
+internal fun row(label: String, state: ObservationState, detail: String, value: String = state.label, failure: ProbeFailure? = null, warning: Boolean = false): NetworkRiskDetailRowModel =
+    NetworkRiskDetailRowModel(label, value,
+        if (warning && state == ObservationState.OBSERVED) DetectorStatus.warning() else state.toDetectorStatus(failure), detail)
 
 internal fun ProxyConfiguration.describe(): String = when (kind) {
     ProxyKind.PAC -> "PAC configured; URL omitted; request-level proxy selection not evaluated."

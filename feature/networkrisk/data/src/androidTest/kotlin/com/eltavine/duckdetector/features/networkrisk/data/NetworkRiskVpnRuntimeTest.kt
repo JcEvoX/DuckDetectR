@@ -28,7 +28,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.eltavine.duckdetector.core.evidence.InfoKind
+import com.eltavine.duckdetector.core.evidence.DetectionSeverity
 import com.eltavine.duckdetector.features.networkrisk.data.fixture.NetworkRiskVpnFixture
 import com.eltavine.duckdetector.features.networkrisk.data.network.AndroidNetworkCollector
 import com.eltavine.duckdetector.features.networkrisk.domain.*
@@ -55,13 +55,12 @@ class NetworkRiskVpnRuntimeTest {
     @Test fun vpnStartCallerExclusionAndStopPreserveCallingUidScope() = withFixture { control ->
         control.establish(context.packageName)
         val included = awaitSample { it.defaultUsesVpn() }
-        assertEquals(InfoKind.SUPPORT, NetworkRiskReport(NetworkRiskStage.READY, network = included).toDetectorStatus().infoKind)
+        assertEquals(DetectionSeverity.WARNING, NetworkRiskReport(NetworkRiskStage.READY, network = included).toDetectorStatus().severity)
 
         // Only the shell UID is allowed in this replacement VPN; the caller stays on its underlay.
         control.establish("com.android.shell")
         val excluded = awaitSample { !it.defaultUsesVpn() && it.snapshot.defaultNetwork.value != null }
         assertFalse(excluded.defaultUsesVpn())
-        assertEquals(InfoKind.SUPPORT, NetworkRiskReport(NetworkRiskStage.READY, network = excluded).toDetectorStatus().infoKind)
 
         control.disconnect()
         awaitSample { !it.defaultUsesVpn() && it.snapshot.defaultNetwork.value != null }

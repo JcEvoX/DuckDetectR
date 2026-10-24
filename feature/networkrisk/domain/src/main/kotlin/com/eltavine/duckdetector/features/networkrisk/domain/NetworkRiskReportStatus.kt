@@ -20,15 +20,45 @@ package com.eltavine.duckdetector.features.networkrisk.domain
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 
-/** VPNs, proxy configuration and installed software are context, with no adverse verdict. */
+/** Observation state alone describes coverage; severity also needs the signal's meaning. */
 fun ObservationState.toDetectorStatus(failure: ProbeFailure? = null): DetectorStatus = DetectorStatus.info(
     if (failure.isProbeError()) InfoKind.ERROR else InfoKind.SUPPORT,
 )
 
 fun NetworkRiskReport.toDetectorStatus(): DetectorStatus = when {
     stage == NetworkRiskStage.FAILED -> DetectorStatus.info(InfoKind.ERROR)
+    hasWarningEvidence() -> DetectorStatus.warning()
     stage == NetworkRiskStage.READY && hasProbeErrors() -> DetectorStatus.info(InfoKind.ERROR)
     else -> DetectorStatus.info(InfoKind.SUPPORT)
+}
+
+/** Warning identifies configuration or installation evidence, never service activity or traffic use. */
+fun NetworkRiskReport.hasWarningEvidence(): Boolean = stage == NetworkRiskStage.READY && (
+    network?.hasWarningEvidence() == true ||
+        clients?.clients.orEmpty().any { it.state == ObservationState.OBSERVED } ||
+        modules.any { it.metadata.state == ObservationState.OBSERVED }
+    )
+
+private fun NetworkSampleWindow.hasWarningEvidence(): Boolean = consistency == SampleConsistency.REPEATED && (
+    vpnState() == ObservationState.OBSERVED ||
+        snapshot.defaultProxy.state == ObservationState.OBSERVED ||
+        snapshot.proxySources?.jvmHttpProxy?.state == ObservationState.OBSERVED ||
+        snapshot.visibleNetworks.state == ObservationState.OBSERVED && snapshot.visibleNetworks.value.orEmpty().any {
+            it.link.state == ObservationState.OBSERVED && it.link.value?.proxy != null
+        }
+    )
+
+fun NetworkSampleWindow.vpnState(): ObservationState {
+    val networks = snapshot.visibleNetworks
+    val state = when {
+        networks.state != ObservationState.OBSERVED -> networks.state
+        networks.value.orEmpty().any {
+            it.transports.state == ObservationState.OBSERVED && NetworkTransport.VPN in it.transports.value.orEmpty()
+        } -> ObservationState.OBSERVED
+        else -> networks.value.orEmpty().firstOrNull { it.transports.state != ObservationState.OBSERVED }?.transports?.state
+            ?: ObservationState.NOT_OBSERVED
+    }
+    return stateFor(state)
 }
 
 /** Collectors retain failures as values, so READY describes completion, not successful coverage. */

@@ -32,8 +32,9 @@ class NetworkRiskCardModelMapperTest {
         // These states are indistinguishable to passive package and configuration observations.
         listOf(false, true).forEach { vpn ->
             listOf(false, true).forEach { proxy ->
-                val model = mapper.map(report(vpn = vpn, proxy = proxy))
-                assertEquals(DetectionSeverity.INFO, model.status.severity)
+                val model = mapper.map(report(vpn = vpn, proxy = proxy, client = true))
+                assertEquals(DetectionSeverity.WARNING, model.status.severity)
+                assertTrue(model.verdict.contains("Network risk indicators observed"))
                 val rows = model.sections.flatMap { it.rows }
                 assertTrue(rows.filter { it.label.endsWith("traffic effect") }.all { it.value == "Unavailable" })
                 assertTrue(rows.filter { it.label.endsWith("service response") }.all { it.value == "Unavailable" })
@@ -44,7 +45,7 @@ class NetworkRiskCardModelMapperTest {
         }
     }
 
-    @Test fun `Private DNS alone and normal VPN stay informational`() {
+    @Test fun `Private DNS alone and ordinary network context stay informational`() {
         val model = mapper.map(report(vpn = false, proxy = false))
         assertEquals(DetectionSeverity.INFO, model.status.severity)
         assertEquals("Not observed", model.headerFacts[0].value)
@@ -75,7 +76,7 @@ class NetworkRiskCardModelMapperTest {
     }
 
     @Test fun `permission failures and platform failures retain different meanings`() {
-        val base = report()
+        val base = report(vpn = false, proxy = false)
         val sample = requireNotNull(base.network)
         val denied = NetworkObservation<Long>(ObservationState.PERMISSION_LIMITED, failure = ProbeFailure.ACCESS_DENIED)
         val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(defaultNetwork = denied))))
@@ -85,7 +86,7 @@ class NetworkRiskCardModelMapperTest {
     }
 
     @Test fun `query errors and disabled active coverage are independently reported`() {
-        val base = report()
+        val base = report(vpn = false, proxy = false)
         val sample = requireNotNull(base.network)
         val failed = NetworkObservation<Long>(ObservationState.UNAVAILABLE, failure = ProbeFailure.PLATFORM_FAILURE)
         val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(defaultNetwork = failed))))
@@ -112,7 +113,7 @@ class NetworkRiskCardModelMapperTest {
         ProxySourceComparison.entries.forEach { comparison ->
             val sources = ProxySourceCheck(NetworkObservation.observed(7890), comparison)
             val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(proxySources = sources))))
-            assertEquals(DetectionSeverity.INFO, model.status.severity)
+            assertEquals(DetectionSeverity.WARNING, model.status.severity)
             val crossCheck = model.sections.flatMap { it.rows }.single { it.label == "Proxy source cross-check" }
             assertEquals(InfoKind.SUPPORT, crossCheck.status.infoKind)
             if (comparison == ProxySourceComparison.DIFFERENT) assertEquals("Inconclusive: views differ", crossCheck.value)
@@ -124,7 +125,7 @@ class NetworkRiskCardModelMapperTest {
     }
 
     @Test fun `probe errors produce an incomplete headline and retain exported failure detail`() {
-        val base = report()
+        val base = report(vpn = false, proxy = false)
         val sample = requireNotNull(base.network)
         val failed = NetworkObservation<Long>(ObservationState.UNAVAILABLE, failure = ProbeFailure.PLATFORM_FAILURE)
         val model = mapper.map(base.copy(network = sample.copy(snapshot = sample.snapshot.copy(defaultNetwork = failed))))
@@ -136,7 +137,57 @@ class NetworkRiskCardModelMapperTest {
         assertTrue(rows.any { it.value == "Unavailable" && it.detail.orEmpty().contains("Platform query or read failed") })
     }
 
-    private fun report(vpn: Boolean = true, proxy: Boolean = true): NetworkRiskReport {
+    @Test fun `VPN and proxy warnings reach matching rows but ordinary context stays informational`() {
+        val model = mapper.map(report())
+        assertEquals(DetectionSeverity.WARNING, model.status.severity)
+        assertEquals(DetectionSeverity.WARNING, model.headerFacts[0].status.severity)
+        assertEquals(DetectionSeverity.WARNING, model.headerFacts[1].status.severity)
+        val rows = model.sections.flatMap { it.rows }
+        listOf("Network 1 transports", "Default HTTP proxy", "Network 1 link proxy / PAC").forEach { label ->
+            assertEquals(label, DetectionSeverity.WARNING, rows.single { it.label == label }.status.severity)
+        }
+        listOf("Caller default network", "Process binding", "Visible networks", "Network 1 interface / routes",
+            "Network 1 Private DNS", "Package visibility", "Sample consistency", "Export privacy").forEach { label ->
+            assertEquals(label, DetectionSeverity.INFO, rows.single { it.label == label }.status.severity)
+        }
+    }
+
+    @Test fun `JVM proxy and deployment traces independently warn in App and export`() {
+        val base = report(vpn = false, proxy = false)
+        val sample = requireNotNull(base.network)
+        val reports = listOf(
+            base.copy(network = sample.copy(snapshot = sample.snapshot.copy(proxySources =
+                ProxySourceCheck(NetworkObservation.observed(7890), ProxySourceComparison.DIFFERENT)))),
+            base.copy(modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX_FOR_ROOT, NetworkObservation.observed("v1.10.2")))),
+            base.copy(clients = requireNotNull(base.clients).copy(clients = listOf(
+                NetworkClientEvidence("moe.nb4a", "NekoBox", ObservationState.OBSERVED, signingFailure = ProbeFailure.PLATFORM_FAILURE)))),
+        )
+        val labels = listOf("JVM HTTP proxy", "Box for Root deployment trace", "NekoBox")
+        reports.zip(labels).forEach { (report, label) ->
+            val model = mapper.map(report)
+            assertEquals(DetectionSeverity.WARNING, model.status.severity)
+            assertEquals(DetectionSeverity.WARNING, model.sections.flatMap { it.rows }.single { it.label == label }.status.severity)
+            assertEquals(model.status.severity, model.toDetectorReport().severity)
+            assertEquals(model.verdict, model.toDetectorReport().verdict)
+        }
+        assertTrue(mapper.map(reports.last()).summary.contains("Some probes failed"))
+    }
+
+    @Test fun `changed samples suppress network warnings while independent package evidence survives`() {
+        val base = report()
+        val changed = base.copy(network = requireNotNull(base.network).copy(consistency = SampleConsistency.CHANGED))
+        val model = mapper.map(changed)
+        assertEquals(DetectionSeverity.INFO, model.status.severity)
+        assertTrue(model.headerFacts.take(2).all { it.status.severity == DetectionSeverity.INFO })
+        assertTrue(model.sections.filter { it.key == "networks" || it.key == "proxy" }.flatMap { it.rows }
+            .all { it.status.severity == DetectionSeverity.INFO })
+        val packageModel = mapper.map(changed.copy(clients = requireNotNull(report(client = true).clients)))
+        assertEquals(DetectionSeverity.WARNING, packageModel.status.severity)
+        assertEquals(DetectionSeverity.WARNING, packageModel.headerFacts[2].status.severity)
+        assertTrue(packageModel.verdict.contains("network changed"))
+    }
+
+    private fun report(vpn: Boolean = true, proxy: Boolean = true, client: Boolean = false): NetworkRiskReport {
         val link = LinkContext("private_tun_name", listOf(VisibleRoute(AddressFamily.IPV6, 0, true, false)),
             if (proxy) ProxyConfiguration(ProxyKind.PAC, -1, 0) else null, true, true, 1)
         return NetworkRiskReport(NetworkRiskStage.READY,
@@ -146,7 +197,7 @@ class NetworkRiskCardModelMapperTest {
                     NetworkObservation.observed(if (vpn) setOf(NetworkTransport.VPN) else setOf(NetworkTransport.WIFI)), NetworkObservation.observed(link))))),
                 SampleConsistency.REPEATED, 100, 2, 1),
             clients = NetworkClientInventory(InstalledPackageVisibility.RESTRICTED, ObservationState.OBSERVED,
-                listOf(NetworkClientEvidence("moe.nb4a", "NekoBox", ObservationState.OBSERVED), NetworkClientEvidence("com.follow.clash", "FlClash", ObservationState.NOT_OBSERVED))),
+                listOf(NetworkClientEvidence("moe.nb4a", "NekoBox", if (client) ObservationState.OBSERVED else ObservationState.NOT_OBSERVED), NetworkClientEvidence("com.follow.clash", "FlClash", ObservationState.NOT_OBSERVED))),
             modules = listOf(ProxyModuleEvidence(ProxyDeployment.BOX4MAGISK, NetworkObservation(ObservationState.PERMISSION_LIMITED, failure = ProbeFailure.ACCESS_DENIED))),
         )
     }

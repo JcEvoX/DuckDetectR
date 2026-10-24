@@ -39,8 +39,9 @@ internal fun NetworkSampleWindow.networkRows(): List<NetworkRiskDetailRowModel> 
             if (network.handle == data.boundNetwork.value) add("process bound")
         }.joinToString(", ").ifEmpty { "other visible" }
         add(row("Network ${index + 1} transports", stateFor(network.transports.state),
-            "$roles; ${network.transports.failure.describe()} VPN transport is context and does not establish proxying of this app's requests.",
-            "${stateFor(network.transports.state).label}; ${network.transports.value?.sortedBy { it.ordinal }?.joinToString { it.name } ?: "unknown"}", failure = network.transports.failure))
+            "$roles; ${network.transports.failure.describe()} VPN transport does not establish proxying of this app's requests.",
+            "${stateFor(network.transports.state).label}; ${network.transports.value?.sortedBy { it.ordinal }?.joinToString { it.name } ?: "unknown"}",
+            failure = network.transports.failure, warning = data.visibleNetworks.state == ObservationState.OBSERVED && NetworkTransport.VPN in network.transports.value.orEmpty()))
         val link = network.link.value
         add(row("Network ${index + 1} interface / routes", stateFor(network.link.state),
             "$roles; LinkProperties routes only; addresses and gateways omitted. ${network.link.failure.describe()}",
@@ -51,11 +52,11 @@ internal fun NetworkSampleWindow.networkRows(): List<NetworkRiskDetailRowModel> 
 
 internal fun NetworkSampleWindow.proxyRows(): List<NetworkRiskDetailRowModel> = buildList {
     add(row("Default HTTP proxy", stateFor(snapshot.defaultProxy.state),
-        "Global proxy takes precedence, then the process-bound network, otherwise the calling UID's network. Configuration is not actual request use. ${snapshot.defaultProxy.value?.describe() ?: snapshot.defaultProxy.failure.describe()}", failure = snapshot.defaultProxy.failure))
+        "Global proxy takes precedence, then the process-bound network, otherwise the calling UID's network. Configuration is not actual request use. ${snapshot.defaultProxy.value?.describe() ?: snapshot.defaultProxy.failure.describe()}", failure = snapshot.defaultProxy.failure, warning = true))
     snapshot.proxySources?.let { sources ->
         add(row("JVM HTTP proxy", stateFor(sources.jvmHttpProxy.state),
             "Process-local http.proxyHost/http.proxyPort only; host omitted. Partial or invalid pairs are inconclusive; exclusions, HTTPS/SOCKS and custom ProxySelectors are outside this check. ${sources.jvmHttpProxy.failure.describe()}",
-            value = stateFor(sources.jvmHttpProxy.state).label + (sources.jvmHttpProxy.value?.let { "; port $it" } ?: ""), failure = sources.jvmHttpProxy.failure))
+            value = stateFor(sources.jvmHttpProxy.state).label + (sources.jvmHttpProxy.value?.let { "; port $it" } ?: ""), failure = sources.jvmHttpProxy.failure, warning = true))
         val state = stateFor(sources.comparison.toObservationState())
         add(row("Proxy source cross-check", state,
             "ConnectivityManager and JVM static HTTP endpoint views; correlated sources, not independent evidence of traffic use. Process overrides and asynchronous updates can differ.",
@@ -70,7 +71,8 @@ internal fun NetworkSampleWindow.proxyRows(): List<NetworkRiskDetailRowModel> = 
         val link = network.link.value
         val proxyState = if (link == null) network.link.state else if (link.proxy == null) ObservationState.NOT_OBSERVED else ObservationState.OBSERVED
         add(row("Network ${index + 1} link proxy / PAC", stateFor(proxyState),
-            link?.proxy?.describe() ?: "Network-specific configuration only; no PAC fetch or request performed. ${network.link.failure.describe()}", failure = network.link.failure))
+            link?.proxy?.describe() ?: "Network-specific configuration only; no PAC fetch or request performed. ${network.link.failure.describe()}",
+            failure = network.link.failure, warning = snapshot.visibleNetworks.state == ObservationState.OBSERVED && network.link.state == ObservationState.OBSERVED))
         val dnsState = if (link == null) network.link.state else if (link.privateDnsActive) ObservationState.OBSERVED else ObservationState.NOT_OBSERVED
         add(row("Network ${index + 1} Private DNS", stateFor(dnsState),
             if (link == null) network.link.failure.describe() else "Context only; not proxy evidence. Strict name configured: ${link.strictPrivateDns}; DNS servers: ${link.dnsServerCount}; names and addresses omitted.", failure = network.link.failure))

@@ -34,14 +34,13 @@ class LocationRiskReportStatusTest {
             assertEquals(DetectionSeverity.WARNING, ready(listOf(check)).toDetectorStatus().severity)
         }
     }
-    @Test fun `mock caches and installed packages do not prove hostile activity`() {
-        val report = ready(clean()).copy(
-            installedPackage = LocationPackageContext(LocationState.OBSERVED, "RESTRICTED"),
-            cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
-                CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, mockMarked = true),
-            )),
-        )
-        assertEquals(DetectionSeverity.INFO, report.toDetectorStatus().severity)
+    @Test fun `cached mock marks warn for every age without establishing current activity`() {
+        CacheAge.entries.forEach { age ->
+            val report = ready(clean()).copy(cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
+                CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, mockMarked = true, age = age),
+            )))
+            assertEquals(DetectionSeverity.WARNING, report.toDetectorStatus().severity)
+        }
     }
     @Test fun `every coverage limitation remains informational`() {
         LocationState.entries.filter { it != LocationState.OBSERVED }.forEach { state ->
@@ -51,9 +50,31 @@ class LocationRiskReportStatusTest {
     @Test fun `clean local contracts never authenticate a location`() {
         assertEquals(DetectionSeverity.INFO, ready(clean()).toDetectorStatus().severity)
     }
-    @Test fun `cached freshness failure stays visible without raising mock evidence to warning`() {
+    @Test fun `freshness failure cannot erase an observed mock warning`() {
         val report = ready(clean()).copy(cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
             CachedLocationCheck(CachedProvider.GPS, LocationState.OBSERVED, true, ageFailure = LocationFailure.PLATFORM_FAILURE),
+        )))
+        assertEquals(DetectionSeverity.WARNING, report.toDetectorStatus().severity)
+    }
+    @Test fun `reference package presence warns without requiring cache or contract evidence`() {
+        val report = ready(clean()).copy(installedPackage = LocationPackageContext(LocationState.OBSERVED, "RESTRICTED"))
+        assertEquals(DetectionSeverity.WARNING, report.toDetectorStatus().severity)
+    }
+    @Test fun `unmarked caches and limited package or mock states remain informational`() {
+        LocationState.entries.filter { it != LocationState.OBSERVED }.forEach { state ->
+            val report = ready(clean()).copy(
+                installedPackage = LocationPackageContext(state, "UNKNOWN"),
+                cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
+                    CachedLocationCheck(CachedProvider.GPS, state, mockMarked = true),
+                    CachedLocationCheck(CachedProvider.NETWORK, LocationState.NOT_OBSERVED, false, CacheAge.STALE),
+                )),
+            )
+            assertEquals(DetectionSeverity.INFO, report.toDetectorStatus().severity)
+        }
+    }
+    @Test fun `age failure without a mock mark remains an informational error`() {
+        val report = ready(clean()).copy(cache = CachedLocationContext(LocationState.OBSERVED, samples = listOf(
+            CachedLocationCheck(CachedProvider.GPS, LocationState.NOT_OBSERVED, false, ageFailure = LocationFailure.PLATFORM_FAILURE),
         )))
         assertEquals(DetectionSeverity.INFO, report.toDetectorStatus().severity)
         assertEquals(InfoKind.ERROR, report.toDetectorStatus().infoKind)
