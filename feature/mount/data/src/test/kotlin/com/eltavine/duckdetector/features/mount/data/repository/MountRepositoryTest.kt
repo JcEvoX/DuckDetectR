@@ -26,6 +26,7 @@ import com.eltavine.duckdetector.capability.helperprocess.data.ProcMountViewRoot
 import com.eltavine.duckdetector.features.mount.data.native.MountNativeBridge
 import com.eltavine.duckdetector.features.mount.data.native.MountNativeFinding
 import com.eltavine.duckdetector.features.mount.data.native.MountNativeSnapshot
+import com.eltavine.duckdetector.features.mount.domain.MountAnonymousDeviceState
 import com.eltavine.duckdetector.features.mount.domain.MountFindingSeverity
 import com.eltavine.duckdetector.features.mount.domain.MountMethodOutcome
 import com.eltavine.duckdetector.features.mount.domain.toDetectorStatus
@@ -203,7 +204,7 @@ class MountRepositoryTest {
             preloadResultProvider = { EarlyMountPreloadResult.empty() },
         ).scan()
 
-        assertEquals(MountFindingSeverity.INFO, report.findings.single().severity)
+        assertEquals(MountFindingSeverity.INFO, report.findings.single { it.id != "anonymous_device_minors" }.severity)
         assertEquals(DetectorStatus.allClear(), report.toDetectorStatus())
         assertEquals(MountMethodOutcome.SUPPORT, report.methods.single { it.label == "/proc/self/mountinfo" }.outcome)
         assertTrue(report.impacts.none { it.severity == MountFindingSeverity.DANGER })
@@ -290,6 +291,7 @@ class MountRepositoryTest {
             mountEntryCount = 32,
             mountInfoEntryCount = 32,
             mapLineCount = 128,
+            anonymousDeviceState = MountAnonymousDeviceState.NO_GAPS,
         )
     }
 

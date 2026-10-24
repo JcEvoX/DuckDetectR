@@ -18,6 +18,8 @@
 package com.eltavine.duckdetector.features.mount.presentation
 
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
+import com.eltavine.duckdetector.core.evidence.InfoKind
+import com.eltavine.duckdetector.features.mount.domain.MountAnonymousDeviceState
 import com.eltavine.duckdetector.features.mount.domain.MountFinding
 import com.eltavine.duckdetector.features.mount.domain.MountFindingGroup
 import com.eltavine.duckdetector.features.mount.domain.MountFindingOrigin
@@ -36,6 +38,23 @@ import org.junit.Test
 class MountCardModelMapperTest {
 
     private val mapper = MountCardModelMapper()
+
+    @Test
+    fun `anonymous device coverage and observations remain visible without a root verdict`() {
+        for (state in listOf(MountAnonymousDeviceState.INCONCLUSIVE, MountAnonymousDeviceState.PARTIAL)) {
+            val finding = MountFinding(
+                id = "anonymous_device_minors", label = "Anonymous device minors", value = state.summary,
+                group = MountFindingGroup.CONSISTENCY, severity = MountFindingSeverity.INFO,
+                detail = "Only part of the anonymous-device window was evaluated.",
+            )
+            val model = mapper.map(report(findings = listOf(finding)).copy(anonymousDeviceState = state))
+            assertEquals(DetectorStatus.info(InfoKind.SUPPORT), model.status)
+            assertTrue(model.verdict.contains("coverage is limited"))
+            assertEquals("Partial", model.headerFacts.single { it.fact == MountHeaderFact.COVERAGE }.value)
+            assertEquals(finding.detail, model.consistencyRows.single().detail)
+            assertEquals(state.summary, model.consistencyRows.single().value)
+        }
+    }
 
     @Test
     fun `debug ramdisk mountpoint info does not turn card yellow`() {
@@ -238,7 +257,7 @@ class MountCardModelMapperTest {
 
         assertEquals(DetectorStatus.allClear(), model.status)
         assertEquals("Observation", model.scanRows.single { it.label == "Startup preload" }.value)
-        assertEquals(DetectorStatus.info(com.eltavine.duckdetector.core.evidence.InfoKind.SUPPORT),
+        assertEquals(DetectorStatus.info(InfoKind.SUPPORT),
             model.headerFacts.single { it.fact == MountHeaderFact.COVERAGE }.status)
         assertTrue(model.consistencyRows.any { it.label == "Mount ID discontinuity" })
     }
